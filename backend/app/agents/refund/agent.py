@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import json
-import re
-
 import structlog
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
@@ -12,7 +9,14 @@ from backend.app.tools.refund.tools import order_lookup, process_refund, refund_
 
 logger = structlog.get_logger()
 
-SYSTEM_PROMPT = """你是退款客服Agent。根据工具查询结果回复用户。
+SYSTEM_PROMPT = """你是退款客服Agent。职责：处理退款请求。
+
+工作流程：
+1. 查询客户订单
+2. 检查退款资格
+3. 告知用户结果
+
+退款政策：30天内可退，质量问题可退，3-5个工作日到账。
 用中文回复，语气专业友好。"""
 
 
@@ -33,60 +37,9 @@ class RefundAgent(BaseAgent):
         return SYSTEM_PROMPT
 
     async def run(self, messages: list[BaseMessage], **kwargs) -> AIMessage:
-        # 提取最后一条用户消息
-        user_text = ""
-        for msg in reversed(messages):
-            if hasattr(msg, "content") and isinstance(msg.content, str) and msg.content.strip():
-                user_text = msg.content
-                break
+        # 添加系统提示
+        system_message = SystemMessage(content=SYSTEM_PROMPT)
+        prompt_messages = [system_message] + list(messages)
 
-        # 提取客户ID和订单号
-        customer_id = self._extract_customer_id(user_text)
-        order_no = self._extract_order_no(user_text)
-
-        # 直接调用工具获取数据
-        tool_results = []
-
-        if customer_id:
-            orders_result = await order_lookup.ainvoke({"customer_id": customer_id})
-            tool_results.append(f"订单查询结果：\n{orders_result}")
-
-        if order_no:
-            eligibility_result = await refund_eligibility.ainvoke({"order_no": order_no})
-            tool_results.append(f"退款资格检查：\n{eligibility_result}")
-
-        # 构建回复
-        if tool_results:
-            context = "\n\n".join(tool_results)
-            prompt = f"""你是退款客服Agent。根据以下工具查询结果回复用户。
-
-用户问题：{user_text}
-
-工具查询结果：
-{context}
-
-请根据以上信息：
-1. 确认订单信息
-2. 说明退款资格
-3. 如果符合退款条件，询问用户是否提交退款申请
-4. 如果不符合，解释原因
-
-用中文回复，语气专业友好。"""
-
-            response = await self.llm.ainvoke([
-                SystemMessage(content=prompt),
-                HumanMessage(content="请根据以上信息回复用户"),
-            ])
-            return response
-        else:
-            return AIMessage(content="请提供客户ID或订单号，以便我查询您的退款信息。")
-
-    def _extract_customer_id(self, text: str) -> str | None:
-        """提取客户ID"""
-        match = re.search(r'C\d{3}', text)
-        return match.group() if match else None
-
-    def _extract_order_no(self, text: str) -> str | None:
-        """提取订单号"""
-        match = re.search(r'ORD-\d{8}-\d{3}', text)
-        return match.group() if match else None
+        # 使用 function calling 执行工具
+        return await self._invoke_and_execute_tools(prompt_messages, self.get_tools())
