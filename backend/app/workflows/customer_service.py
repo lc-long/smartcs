@@ -317,6 +317,12 @@ class CustomerServiceWorkflow:
 
         logger.info("execute_complex", task_count=len(sub_tasks))
 
+        # 发送复杂任务开始事件
+        await self._emit_event("complex_task_start", {
+            "task_count": len(sub_tasks),
+            "agents": [t["agent"] for t in sub_tasks],
+        })
+
         # 执行子任务
         agent_results = {}
         all_tools_called = []
@@ -331,7 +337,11 @@ class CustomerServiceWorkflow:
                 ]
 
                 if len(group_tasks) > 1:
-                    # 并行执行
+                    # 并行执行 - 发送并行开始事件
+                    await self._emit_event("parallel_start", {
+                        "agents": [t["agent"] for t in group_tasks],
+                    })
+
                     tasks = []
                     for task in group_tasks:
                         tasks.append(self._execute_subtask(
@@ -403,6 +413,12 @@ class CustomerServiceWorkflow:
         }
         agent = agent_map.get(agent_name, self.general)
 
+        # 发送子任务开始事件
+        await self._emit_event("subtask_start", {
+            "agent": agent_name,
+            "description": task["description"],
+        })
+
         if working_memory:
             working_memory.add_thought(
                 f"开始执行子任务: {task['description']}",
@@ -414,12 +430,26 @@ class CustomerServiceWorkflow:
             content = response.content if isinstance(response.content, str) else str(response.content)
             content = self._strip_think_tags(content)
 
+            # 发送子任务完成事件
+            await self._emit_event("subtask_complete", {
+                "agent": agent_name,
+                "success": True,
+            })
+
             if working_memory:
                 working_memory.add_result(content, agent_name)
 
             return content
         except Exception as e:
             logger.exception("subtask_error", agent=agent_name)
+
+            # 发送子任务失败事件
+            await self._emit_event("subtask_complete", {
+                "agent": agent_name,
+                "success": False,
+                "error": str(e),
+            })
+
             if working_memory:
                 working_memory.add_observation(f"子任务执行失败: {str(e)}", agent=agent_name)
             return f"执行失败: {str(e)}"

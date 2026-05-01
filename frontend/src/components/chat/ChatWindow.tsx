@@ -50,6 +50,26 @@ export default function ChatWindow() {
         }
         break;
 
+      case "complex_task_start":
+        // 复杂任务开始，显示正在协调多个Agent
+        setCurrentAgent("supervisor");
+        setProcessing(true);
+        break;
+
+      case "parallel_start":
+        // 并行执行开始
+        setCurrentAgent("supervisor");
+        break;
+
+      case "subtask_start":
+        // 子任务开始，更新当前Agent
+        setCurrentAgent(event.agent as string);
+        break;
+
+      case "subtask_complete":
+        // 子任务完成，但可能还有其他子任务
+        break;
+
       case "agent_start":
         setCurrentAgent(event.agent as string);
         setProcessing(true);
@@ -192,7 +212,7 @@ export default function ChatWindow() {
                 </div>
                 <span className="text-sm text-gray-500">
                   {currentAgent === "supervisor"
-                    ? "正在分析任务..."
+                    ? "正在协调多个Agent处理..."
                     : agentInfo
                     ? `${agentInfo.name} 正在处理...`
                     : "AI 正在思考..."}
