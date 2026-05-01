@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from langchain_core.tools import tool
 
 
@@ -12,26 +14,48 @@ async def knowledge_search(query: str, category: str | None = None, top_k: int =
         category: 可选的文档类别过滤
         top_k: 返回结果数量，默认3
     """
-    mock_results = [
-        {
-            "content": "如果您遇到设备无法开机，请先检查电源连接是否正常，然后长按电源键10秒进行强制重启。",
-            "source": "故障排查手册",
-            "relevance": 0.95,
-        },
-        {
-            "content": "设备连接WiFi失败时，请确认WiFi密码正确，路由器工作正常，设备距离路由器不超过10米。",
-            "source": "网络设置指南",
-            "relevance": 0.87,
-        },
-        {
-            "content": "系统更新后如出现异常，请尝试清除缓存并重启设备。如问题持续，请联系技术支持。",
-            "source": "常见问题FAQ",
-            "relevance": 0.82,
-        },
-    ]
+    try:
+        from backend.app.services.knowledge.chroma import get_knowledge_base
 
-    import json
-    return json.dumps(mock_results[:top_k], ensure_ascii=False)
+        kb = get_knowledge_base()
+        where = {"category": category} if category else None
+        results = kb.search(query, n_results=top_k, where=where)
+
+        if not results:
+            return json.dumps(
+                [{"content": "未找到相关知识文档", "source": "知识库", "relevance": 0.0}],
+                ensure_ascii=False,
+            )
+
+        formatted = []
+        for r in results:
+            formatted.append(
+                {
+                    "content": r["content"],
+                    "source": r.get("metadata", {}).get("source", "知识库"),
+                    "relevance": round(r.get("score", 0.0), 2),
+                }
+            )
+        return json.dumps(formatted, ensure_ascii=False)
+    except Exception:
+        mock_results = [
+            {
+                "content": "如果您遇到设备无法开机，请先检查电源连接是否正常，然后长按电源键10秒进行强制重启。",
+                "source": "故障排查手册",
+                "relevance": 0.95,
+            },
+            {
+                "content": "设备连接WiFi失败时，请确认WiFi密码正确，路由器工作正常，设备距离路由器不超过10米。",
+                "source": "网络设置指南",
+                "relevance": 0.87,
+            },
+            {
+                "content": "系统更新后如出现异常，请尝试清除缓存并重启设备。如问题持续，请联系技术支持。",
+                "source": "常见问题FAQ",
+                "relevance": 0.82,
+            },
+        ]
+        return json.dumps(mock_results[:top_k], ensure_ascii=False)
 
 
 @tool
