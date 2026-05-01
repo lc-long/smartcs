@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.v1.auth import get_current_user, require_agent, require_viewer
 from backend.app.core.database import get_db_session
 from backend.app.models.db.ecommerce import (
     Customer,
@@ -20,6 +21,7 @@ from backend.app.models.db.ecommerce import (
     Refund,
     SupportTicket,
 )
+from backend.app.models.db.user import User
 
 logger = structlog.get_logger()
 
@@ -315,14 +317,26 @@ async def list_orders(
     customer_id: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_viewer),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """获取订单列表"""
+    """获取订单列表（根据用户角色过滤）"""
     query = select(Order)
+
+    # 数据权限过滤
+    if current_user.role == "viewer":
+        # 普通用户只能看自己的订单
+        if current_user.customer_id:
+            query = query.where(Order.customer_id == current_user.customer_id)
+        else:
+            # 没有关联客户，返回空
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+    elif customer_id:
+        # 管理员和客服可以按客户ID过滤
+        query = query.where(Order.customer_id == customer_id)
+
     if status:
         query = query.where(Order.status == status)
-    if customer_id:
-        query = query.where(Order.customer_id == customer_id)
     query = query.order_by(Order.created_at.desc())
 
     # 计算总数
@@ -468,9 +482,10 @@ async def list_customers(
     vip_level: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_agent),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """获取客户列表"""
+    """获取客户列表（仅管理员和客服可访问）"""
     query = select(Customer)
     if vip_level:
         query = query.where(Customer.vip_level == vip_level)
@@ -585,10 +600,20 @@ async def list_refunds(
     status: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_viewer),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """获取退款列表"""
+    """获取退款列表（根据用户角色过滤）"""
     query = select(Refund)
+
+    # 数据权限过滤
+    if current_user.role == "viewer":
+        # 普通用户只能看自己的退款
+        if current_user.customer_id:
+            query = query.where(Refund.customer_id == current_user.customer_id)
+        else:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+
     if status:
         query = query.where(Refund.status == status)
     query = query.order_by(Refund.created_at.desc())
@@ -626,9 +651,10 @@ async def list_refunds(
 @router.put("/refunds/{refund_id}/approve")
 async def approve_refund(
     refund_id: str,
+    current_user: User = Depends(require_agent),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """审批退款"""
+    """审批退款（客服只能审批≤¥500）"""
     from datetime import datetime
 
     result = await session.execute(
@@ -641,8 +667,15 @@ async def approve_refund(
     if refund.status != "pending":
         raise HTTPException(status_code=400, detail="退款已处理")
 
+    # 金额限制：客服只能审批≤¥500的退款
+    if current_user.role == "agent" and refund.amount > 500:
+        raise HTTPException(
+            status_code=403,
+            detail="客服只能审批≤¥500的退款， larger amounts require admin approval"
+        )
+
     refund.status = "approved"
-    refund.approved_by = "admin"
+    refund.approved_by = current_user.username
     refund.approved_at = datetime.now()
     await session.commit()
 
@@ -653,10 +686,18 @@ async def approve_refund(
 async def reject_refund(
     refund_id: str,
     reason: str = "",
+    current_user: User = Depends(require_agent),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """拒绝退款"""
+    """拒绝退款（仅管理员可拒绝）"""
     from datetime import datetime
+
+    # 只有管理员可以拒绝退款
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can reject refunds"
+        )
 
     result = await session.execute(
         select(Refund).where(Refund.id == refund_id)
@@ -669,7 +710,7 @@ async def reject_refund(
         raise HTTPException(status_code=400, detail="退款已处理")
 
     refund.status = "rejected"
-    refund.approved_by = "admin"
+    refund.approved_by = current_user.username
     refund.approved_at = datetime.now()
     await session.commit()
 
