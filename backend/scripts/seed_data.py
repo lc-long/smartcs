@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from datetime import datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
+
+# Add project root to Python path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.app.core.database import get_engine, init_db
 from backend.app.models.db.ecommerce import (
