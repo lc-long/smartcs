@@ -49,7 +49,7 @@ function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode;
 
 // 导航组件
 function AppLayout() {
-  const { user, logout, isAdmin, isAgent, canApprove } = useAuth();
+  const { user, logout, isAgent, canApprove } = useAuth();
   const location = useLocation();
 
   const navItems = [

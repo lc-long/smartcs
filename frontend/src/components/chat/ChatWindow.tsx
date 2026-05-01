@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useChatStore } from "../../store/chatStore";
 import { useWebSocket } from "../../hooks/useWebSocket";
-import type { ChatMessage, WSEvent } from "../../types";
+import type { WSEvent } from "../../types";
 import MessageBubble from "./MessageBubble";
 
 const QUICK_QUESTIONS = [
