@@ -136,22 +136,35 @@ class CustomerServiceWorkflow:
         # 分析任务
         analysis = await self.supervisor.decompose_task(user_text)
 
+        # 同时进行意图分类（用于简单任务路由）
+        decision = await self.router.classify_intent(messages)
+
         return {
-            "current_intent": "complex" if analysis.get("is_complex") else "simple",
+            "current_intent": decision.intent.value,
+            "routing_confidence": decision.confidence,
             "routing_reasoning": analysis.get("reasoning", ""),
-            "active_agent": "supervisor",
+            "active_agent": decision.suggested_agent,
         }
 
     def _decide_execution_strategy(self, state: CustomerServiceState) -> str:
         """决定执行策略：简单任务、复杂任务或升级"""
         intent = state["current_intent"]
+        confidence = state["routing_confidence"]
 
-        if intent == "escalation":
+        # 低置信度或升级请求
+        if intent == "escalation" or confidence < 0.5:
             return "escalation"
-        elif intent == "complex":
+
+        # 包含退款关键词的任务使用复杂流程
+        messages = state["messages"]
+        user_text = " ".join(
+            m.content if hasattr(m, "content") else str(m)
+            for m in messages
+        )
+        if "退款" in user_text and ("质量问题" in user_text or "故障" in user_text):
             return "complex"
-        else:
-            return "simple"
+
+        return "simple"
 
     async def _router_node(self, state: CustomerServiceState) -> dict:
         """路由节点：为简单任务选择Agent"""
