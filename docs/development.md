@@ -95,9 +95,10 @@ docs/update-api-docs
 
 | 工具 | 用途 | 命令 |
 |------|------|------|
-| Ruff | Linting + Formatting | `ruff check .` / `ruff format .` |
-| mypy | 类型检查 | `mypy backend/` |
-| pytest | 测试 | `pytest` |
+| uv | 包管理 | `uv sync` / `uv add <pkg>` / `uv run <cmd>` |
+| Ruff | Linting + Formatting | `uv run ruff check .` / `uv run ruff format .` |
+| mypy | 类型检查 | `uv run mypy backend/` |
+| pytest | 测试 | `uv run pytest` |
 
 ### 3.2 代码风格
 

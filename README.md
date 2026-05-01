@@ -163,6 +163,7 @@ User Request
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
 - MiniMax API key ([Get one here](https://platform.minimaxi.com/))
 
 ### 1. Clone & Configure
@@ -177,16 +178,15 @@ cp .env.example .env
 ### 2. Backend Setup
 
 ```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install dependencies
-pip install -e .
+# Install dependencies and create virtual environment
+uv sync
 
 # Run backend
-python backend/scripts/run_server.py
-# Or: uvicorn backend.app.main:app --reload --port 8000
+uv run uvicorn backend.app.main:app --reload --port 8000
+# Or: uv run python backend/scripts/run_server.py
 ```
 
 ### 3. Frontend Setup
@@ -297,13 +297,20 @@ docker run -p 80:80 smartcs-frontend
 
 ```bash
 # Run all tests
-pytest backend/tests/ -v
+uv run pytest backend/tests/ -v
 
 # Run specific test file
-pytest backend/tests/unit/test_tools.py -v
+uv run pytest backend/tests/unit/test_tools.py -v
 
 # With coverage
-pytest backend/tests/ --cov=backend/app --cov-report=html
+uv run pytest backend/tests/ --cov=backend/app --cov-report=html
+
+# Linting
+uv run ruff check .
+uv run ruff format .
+
+# Type checking
+uv run mypy backend/
 ```
 
 ## Current Status
