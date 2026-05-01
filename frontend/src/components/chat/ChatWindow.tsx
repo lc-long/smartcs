@@ -43,9 +43,20 @@ export default function ChatWindow() {
     addEvent(event);
 
     switch (event.type) {
+      case "planning":
+        if (event.status === "analyzing") {
+          setCurrentAgent("supervisor");
+          setProcessing(true);
+        }
+        break;
+
       case "agent_start":
         setCurrentAgent(event.agent as string);
         setProcessing(true);
+        break;
+
+      case "agent_complete":
+        // Agent 完成，但可能还有其他 Agent 在执行
         break;
 
       case "agent_response":
@@ -58,6 +69,7 @@ export default function ChatWindow() {
           created_at: new Date().toISOString(),
         });
         setProcessing(false);
+        setCurrentAgent(null);
         break;
 
       case "error":
@@ -69,6 +81,7 @@ export default function ChatWindow() {
           created_at: new Date().toISOString(),
         });
         setProcessing(false);
+        setCurrentAgent(null);
         break;
 
       case "human_approval_needed":
@@ -178,7 +191,11 @@ export default function ChatWindow() {
                   <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]" />
                 </div>
                 <span className="text-sm text-gray-500">
-                  {agentInfo ? `${agentInfo.name} 正在思考...` : "AI 正在思考..."}
+                  {currentAgent === "supervisor"
+                    ? "正在分析任务..."
+                    : agentInfo
+                    ? `${agentInfo.name} 正在处理...`
+                    : "AI 正在思考..."}
                 </span>
               </div>
             </div>
