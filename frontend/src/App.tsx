@@ -1,4 +1,4 @@
-import { Routes, Route, Link, useLocation, Navigate } from "react-router-dom";
+import { Routes, Route, Link, useLocation, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import ChatPage from "./pages/ChatPage";
@@ -11,7 +11,7 @@ import { KnowledgePage } from "./pages/KnowledgePage";
 import { RefundsPage } from "./pages/RefundsPage";
 
 // 路由保护组件
-function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode; requiredRole?: string }) {
+function ProtectedRoute({ requiredRole }: { requiredRole?: string }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
@@ -44,10 +44,10 @@ function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode;
     }
   }
 
-  return <>{children}</>;
+  return <Outlet />;
 }
 
-// 导航组件
+// 导航布局组件
 function AppLayout() {
   const { user, logout, isAgent, canApprove } = useAuth();
   const location = useLocation();
@@ -69,13 +69,13 @@ function AppLayout() {
     return acc;
   }, {} as Record<string, typeof navItems>);
 
-  const roleLabels = {
+  const roleLabels: Record<string, string> = {
     admin: "管理员",
     agent: "客服",
     viewer: "访客",
   };
 
-  const roleColors = {
+  const roleColors: Record<string, string> = {
     admin: "bg-red-100 text-red-800",
     agent: "bg-blue-100 text-blue-800",
     viewer: "bg-gray-100 text-gray-800",
@@ -137,30 +137,7 @@ function AppLayout() {
       </nav>
 
       <main className="flex-1 overflow-auto">
-        <Routes>
-          <Route path="/" element={<ChatPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/products" element={<ProductsPage />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/customers" element={<CustomersPage />} />
-          <Route
-            path="/refunds"
-            element={
-              <ProtectedRoute requiredRole="agent">
-                <RefundsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/knowledge" element={<KnowledgePage />} />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminPage />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+        <Outlet />
       </main>
     </div>
   );
@@ -171,14 +148,22 @@ export default function App() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }
-        />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<ChatPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/products" element={<ProductsPage />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/customers" element={<CustomersPage />} />
+            <Route path="/knowledge" element={<KnowledgePage />} />
+            <Route element={<ProtectedRoute requiredRole="agent" />}>
+              <Route path="/refunds" element={<RefundsPage />} />
+            </Route>
+            <Route element={<ProtectedRoute requiredRole="admin" />}>
+              <Route path="/admin" element={<AdminPage />} />
+            </Route>
+          </Route>
+        </Route>
       </Routes>
     </AuthProvider>
   );
