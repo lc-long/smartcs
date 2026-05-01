@@ -4,7 +4,7 @@ import json
 import re
 
 import structlog
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
@@ -72,7 +72,10 @@ class RefundAgent(BaseAgent):
 
 用中文回复，语气专业友好。"""
 
-            response = await self.llm.ainvoke([SystemMessage(content=prompt)])
+            response = await self.llm.ainvoke([
+                SystemMessage(content=prompt),
+                HumanMessage(content="请根据以上信息回复用户"),
+            ])
             return response
         else:
             return AIMessage(content="请提供客户ID或订单号，以便我查询您的退款信息。")

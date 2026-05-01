@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import structlog
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
@@ -47,5 +47,8 @@ class GeneralAgent(BaseAgent):
 
 请用友好的语气回答用户问题。如果问题不属于你的范围，建议用户联系专业客服。用中文回复。"""
 
-        response = await self.llm.ainvoke([SystemMessage(content=prompt)])
+        response = await self.llm.ainvoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content="请根据以上信息回复用户"),
+        ])
         return response

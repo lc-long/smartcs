@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 import structlog
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
@@ -59,7 +59,10 @@ class BillingAgent(BaseAgent):
 
 请用清晰的语言解释账单信息。用中文回复。"""
 
-            response = await self.llm.ainvoke([SystemMessage(content=prompt)])
+            response = await self.llm.ainvoke([
+                SystemMessage(content=prompt),
+                HumanMessage(content="请根据以上信息回复用户"),
+            ])
             return response
         else:
             return AIMessage(content="请提供客户ID，以便我查询您的账单信息。")

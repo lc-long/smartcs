@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 import structlog
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
@@ -66,7 +66,10 @@ class TechnicalAgent(BaseAgent):
 
 请根据知识库内容提供解决方案。如果问题复杂，建议创建工单。用中文回复。"""
 
-        response = await self.llm.ainvoke([SystemMessage(content=prompt)])
+        response = await self.llm.ainvoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content="请根据以上信息回复用户"),
+        ])
         return response
 
     def _extract_search_query(self, text: str) -> str:
