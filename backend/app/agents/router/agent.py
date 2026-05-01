@@ -9,25 +9,38 @@ from backend.app.services.llm.provider import LLMProvider
 
 logger = structlog.get_logger()
 
-SYSTEM_PROMPT = """你是一个智能客服意图分类器。你的任务是分析用户消息，判断用户意图类别。
+SYSTEM_PROMPT = """你是一个智能客服意图分类器。分析用户消息，判断意图类别。
 
-## 意图类别
+意图类别（必须使用以下英文值）：
+- billing: 账单相关（发票、支付历史、账单金额）
+- technical: 技术支持（产品故障、使用问题）
+- refund: 退款相关（退款申请、退款进度）
+- escalation: 用户明确要求人工客服
+- general: 其他无法分类的问题
 
-1. **billing** - 账单相关：发票查询、支付历史、账单金额、付款问题
-2. **technical** - 技术支持：产品故障、使用问题、功能咨询、Bug报告
-3. **refund** - 退款相关：退款申请、退款进度、退款政策
-4. **general** - 通用咨询：产品信息、公司信息、其他非特定问题
-5. **escalation** - 人工升级：用户明确要求人工客服、情绪激动、问题复杂无法自动处理
+规则：
+- 用户说"人工"、"转人工"直接归为 escalation
+- 无法确定时归为 general
+- intent字段必须是上面的英文值之一
 
-## 判断规则
+请直接输出JSON，不要输出其他内容：
+{"intent": "billing", "confidence": 0.9, "reasoning": "理由"}"""
 
-- 仔细分析用户消息中的关键词和上下文
-- 如果有多重意图，选择最主要的一个
-- 如果用户明确要求"人工"、"转人工"、"找人工"，直接归为 escalation
-- 如果无法确定类别，归为 general
-- 对你的分类给出置信度(0.0-1.0)和简短理由
-
-请以JSON格式输出你的判断结果。"""
+INTENT_MAPPING = {
+    "billing": IntentType.BILLING,
+    "账单": IntentType.BILLING,
+    "发票": IntentType.BILLING,
+    "支付": IntentType.BILLING,
+    "technical": IntentType.TECHNICAL,
+    "技术": IntentType.TECHNICAL,
+    "故障": IntentType.TECHNICAL,
+    "refund": IntentType.REFUND,
+    "退款": IntentType.REFUND,
+    "escalation": IntentType.ESCALATION,
+    "人工": IntentType.ESCALATION,
+    "general": IntentType.GENERAL,
+    "通用": IntentType.GENERAL,
+}
 
 
 class RouterAgent(BaseAgent):
@@ -53,8 +66,8 @@ class RouterAgent(BaseAgent):
 
         try:
             decision = self._parse_response(content)
-        except ValueError:
-            logger.warning("router_parse_failed", raw_content=content)
+        except (ValueError, KeyError):
+            logger.warning("router_parse_failed", raw_content=content[:200])
             decision = RouteDecision(
                 intent=IntentType.GENERAL,
                 confidence=0.3,
@@ -73,12 +86,35 @@ class RouterAgent(BaseAgent):
         import json
 
         content = content.strip()
-        if content.startswith("```"):
+
+        first_brace = content.find("{")
+        last_brace = content.rfind("}")
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            content = content[first_brace:last_brace + 1]
+        elif content.startswith("```"):
             lines = content.split("\n")
             content = "\n".join(lines[1:-1])
 
         data = json.loads(content)
-        return RouteDecision(**data)
+        if "reason" in data and "reasoning" not in data:
+            data["reasoning"] = data.pop("reason")
+
+        intent_raw = str(data.get("intent", "")).lower().strip()
+        intent = INTENT_MAPPING.get(intent_raw)
+        if intent is None:
+            for key, val in INTENT_MAPPING.items():
+                if key in intent_raw or intent_raw in key:
+                    intent = val
+                    break
+        if intent is None:
+            intent = IntentType.GENERAL
+
+        return RouteDecision(
+            intent=intent,
+            confidence=float(data.get("confidence", 0.5)),
+            reasoning=str(data.get("reasoning", "")),
+            suggested_agent=self.get_agent_for_intent(intent),
+        )
 
     def get_agent_for_intent(self, intent: IntentType) -> str:
         mapping = {
