@@ -35,7 +35,11 @@ class BillingAgent(BaseAgent):
     def get_system_prompt(self):
         return SYSTEM_PROMPT
 
-    async def run(self, messages: list[BaseMessage], **kwargs) -> AIMessage:
-        system_message = SystemMessage(content=SYSTEM_PROMPT)
+    async def run(self, messages: list[BaseMessage], customer_id: str | None = None, **kwargs) -> AIMessage:
+        system_prompt = SYSTEM_PROMPT
+        if customer_id:
+            system_prompt += f"\n\n当前客户ID: {customer_id}。查询账单时请使用此客户ID。"
+
+        system_message = SystemMessage(content=system_prompt)
         prompt_messages = [system_message] + list(messages)
         return await self._invoke_and_execute_tools(prompt_messages, self.get_tools())

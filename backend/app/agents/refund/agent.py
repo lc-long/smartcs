@@ -36,9 +36,14 @@ class RefundAgent(BaseAgent):
     def get_system_prompt(self):
         return SYSTEM_PROMPT
 
-    async def run(self, messages: list[BaseMessage], **kwargs) -> AIMessage:
+    async def run(self, messages: list[BaseMessage], customer_id: str | None = None, **kwargs) -> AIMessage:
+        # 构建系统提示，包含客户ID信息
+        system_prompt = SYSTEM_PROMPT
+        if customer_id:
+            system_prompt += f"\n\n当前客户ID: {customer_id}。查询订单时请使用此客户ID。"
+
         # 添加系统提示
-        system_message = SystemMessage(content=SYSTEM_PROMPT)
+        system_message = SystemMessage(content=system_prompt)
         prompt_messages = [system_message] + list(messages)
 
         # 使用 function calling 执行工具

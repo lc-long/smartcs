@@ -152,6 +152,7 @@ class CustomerServiceWorkflow:
         """执行节点：调用对应的Agent处理任务"""
         messages = state["messages"]
         agent_name = state["active_agent"]
+        customer_id = state.get("customer_id")
 
         # 获取对应的Agent
         agent_map = {
@@ -162,10 +163,10 @@ class CustomerServiceWorkflow:
         }
         agent = agent_map.get(agent_name, self.general)
 
-        logger.info("execute_agent", agent=agent_name)
+        logger.info("execute_agent", agent=agent_name, customer_id=customer_id)
 
         try:
-            response = await agent.run(messages)
+            response = await agent.run(messages, customer_id=customer_id)
             content = response.content if isinstance(response.content, str) else str(response.content)
             content = self._strip_think_tags(content)
 
