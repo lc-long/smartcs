@@ -9,23 +9,13 @@ from backend.app.tools.general.tools import company_info, faq_search
 
 logger = structlog.get_logger()
 
-SYSTEM_PROMPT = """你是一个通用客服Agent。你的职责是处理无法归类到其他专业领域的通用咨询。
+SYSTEM_PROMPT = """你是通用客服Agent。职责：处理通用咨询。
 
-## 你能做的事情
-- 搜索常见问题FAQ
-- 提供公司基本信息
-- 解答通用的产品咨询
-- 引导客户到合适的专业Agent
+可用工具：
+- faq_search: 搜索FAQ，参数query
+- company_info: 公司信息，参数info_type
 
-## 工作原则
-1. 尽量从FAQ中找到答案
-2. 如果问题属于账单、技术或退款范畴，告知客户可以转接专业客服
-3. 不要编造信息，只基于工具返回的数据回答
-
-## 回复风格
-- 热情友好
-- 简洁明了
-- 主动提供帮助"""
+工作流程：理解问题→搜索FAQ→回复或引导到专业Agent"""
 
 
 class GeneralAgent(BaseAgent):

@@ -55,33 +55,9 @@ class BaseAgent(ABC):
         if not tools:
             return ""
 
-        desc = "\n\n## 可用工具\n\n"
-        desc += "你可以调用以下工具来获取数据。调用时请使用JSON格式：\n"
-        desc += '{"tool": "工具名", "params": {"参数名": "参数值"}}\n\n'
-
+        desc = "\n\n可用工具（调用格式：{\"tool\":\"工具名\",\"params\":{\"参数\":\"值\"}}）：\n"
         for tool in tools:
-            desc += f"### {tool.name}\n"
-            desc += f"描述：{tool.description}\n"
-            if hasattr(tool, 'args_schema') and tool.args_schema:
-                try:
-                    schema = tool.args_schema.model_json_schema()
-                    params = schema.get('properties', {})
-                    required = schema.get('required', [])
-                    desc += "参数：\n"
-                    for param_name, param_info in params.items():
-                        param_type = param_info.get('type', 'any')
-                        param_desc = param_info.get('description', '')
-                        req = "(必填)" if param_name in required else "(可选)"
-                        desc += f"  - {param_name}: {param_type} {req} - {param_desc}\n"
-                except Exception:
-                    pass
-            desc += "\n"
-
-        desc += "\n## 重要提示\n"
-        desc += "1. 先分析用户问题，决定需要调用哪些工具\n"
-        desc += "2. 一次可以调用多个工具，用换行分隔\n"
-        desc += "3. 获取工具结果后，用自然语言回复用户\n"
-        desc += "4. 如果不需要调用工具，直接回复用户\n"
+            desc += f"- {tool.name}: {tool.description[:50]}\n"
 
         return desc
 

@@ -14,30 +14,15 @@ from backend.app.tools.technical.tools import (
 
 logger = structlog.get_logger()
 
-SYSTEM_PROMPT = """你是一个专业的技术支持Agent。你的职责是帮助客户解决产品使用和技术问题。
+SYSTEM_PROMPT = """你是技术支持Agent。职责：解决产品技术问题。
 
-## 你能做的事情
-- 从知识库搜索解决方案
-- 查询和创建技术工单
-- 提供产品信息和使用指导
-- 排查常见技术故障
+可用工具：
+- knowledge_search: 搜索知识库，参数query/category
+- ticket_create: 创建工单，参数customer_id/title/description
+- ticket_lookup: 查询工单，参数customer_id
+- product_info: 产品信息，参数product_name
 
-## 工作原则
-1. 先了解客户遇到的具体问题
-2. 优先从知识库搜索已有解决方案
-3. 如果已有方案无法解决，创建技术工单
-4. 复杂问题建议转接高级技术支持
-
-## 排查流程
-1. 确认问题现象
-2. 搜索知识库
-3. 提供解决方案
-4. 如果解决不了，创建工单并告知客户处理时间
-
-## 回复风格
-- 条理清晰，步骤明确
-- 使用客户能理解的语言，避免专业术语
-- 引用知识库内容时注明来源"""
+工作流程：了解问题→搜索知识库→提供方案或创建工单"""
 
 
 class TechnicalAgent(BaseAgent):

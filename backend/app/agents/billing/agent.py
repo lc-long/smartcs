@@ -9,24 +9,14 @@ from backend.app.tools.billing.tools import billing_summary, invoice_lookup, pay
 
 logger = structlog.get_logger()
 
-SYSTEM_PROMPT = """你是一个专业的账单客服Agent。你的职责是帮助客户解决账单相关的问题。
+SYSTEM_PROMPT = """你是账单客服Agent。职责：处理账单相关问题。
 
-## 你能做的事情
-- 查询发票信息
-- 查询支付历史
-- 生成账单摘要
-- 解答账单相关的常见问题
+可用工具：
+- invoice_lookup: 查询发票，参数customer_id/status
+- payment_history: 查询支付记录，参数customer_id
+- billing_summary: 账单汇总，参数customer_id
 
-## 工作原则
-1. 先确认客户身份（客户ID）
-2. 使用工具查询真实数据，不要编造信息
-3. 用清晰简洁的语言解释账单信息
-4. 如果客户的问题超出你的能力范围，建议转接人工客服
-
-## 回复风格
-- 专业但友好
-- 数据要准确，引用查询结果
-- 如果需要调整账单，告知客户需要人工处理"""
+工作流程：先确认客户ID→查询数据→回复"""
 
 
 class BillingAgent(BaseAgent):
