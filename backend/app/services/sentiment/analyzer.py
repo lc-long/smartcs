@@ -33,22 +33,29 @@ class SentimentAnalyzer:
     POSITIVE_KEYWORDS = [
         "谢谢", "感谢", "好的", "明白", "清楚", "满意", "不错", "很好",
         "太好了", "辛苦了", "麻烦了", "感谢帮助",
+        "thanks", "thank you", "good", "great", "excellent", "satisfied",
     ]
 
     NEGATIVE_KEYWORDS = [
         "不满", "投诉", "差评", "垃圾", "骗人", "坑", "坑人",
         "服务差", "态度差", "不专业", "效率低",
+        "angry", "terrible", "bad", "poor", "horrible", "unacceptable",
+        "disappointed", "frustrated", "annoyed", "upset",
     ]
 
     VERY_NEGATIVE_KEYWORDS = [
         "愤怒", "气死", "忍无可忍", "无法忍受", "太过分了",
         "我要投诉", "找你们领导", "曝光", "律师", "法院",
         "消协", "12315", "工商",
+        "furious", "outraged", "unbelievable", "worst", "disgusting",
+        "want to complain", "speak to manager", "sue", "lawyer",
     ]
 
     ESCALATION_KEYWORDS = [
         "转人工", "找人工", "人工客服", "真人", "经理", "主管",
         "领导", "上级", "投诉",
+        "transfer to human", "human agent", "manager", "supervisor",
+        "escalate", "complaint",
     ]
 
     # 重复问题模式
