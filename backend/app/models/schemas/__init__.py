@@ -7,6 +7,14 @@ from uuid import UUID, uuid4
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from backend.app.models.schemas.auth import (
+    TokenRefresh,
+    TokenResponse,
+    UserCreate,
+    UserLogin,
+    UserResponse,
+)
+
 
 class IntentType(str, Enum):
     BILLING = "billing"
@@ -130,3 +138,26 @@ def from_langchain_message(msg: BaseMessage, agent_name: str | None = None) -> C
         content=msg.content if isinstance(msg.content, str) else str(msg.content),
         agent_name=agent_name,
     )
+
+
+__all__ = [
+    "ApprovalDecision",
+    "ApprovalRequest",
+    "ChatMessage",
+    "ChatRequest",
+    "ChatResponse",
+    "ChatResponseMetadata",
+    "ConversationDetail",
+    "ConversationStatus",
+    "ConversationSummary",
+    "IntentType",
+    "MessageRole",
+    "RouteDecision",
+    "TokenRefresh",
+    "TokenResponse",
+    "UserCreate",
+    "UserLogin",
+    "UserResponse",
+    "from_langchain_message",
+    "to_langchain_message",
+]
