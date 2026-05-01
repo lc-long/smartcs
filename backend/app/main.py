@@ -4,12 +4,14 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.app.api.v1.admin import router as admin_router
 from backend.app.api.v1.chat import router as chat_router
 from backend.app.api.v1.health import router as health_router
 from backend.app.api.v1.traces import router as traces_router
+from backend.app.api.websocket.chat_ws import handle_websocket
 from backend.app.core.config.settings import get_settings
 
 logger = structlog.get_logger()
@@ -51,6 +53,12 @@ def create_app() -> FastAPI:
     app.include_router(chat_router)
     app.include_router(health_router)
     app.include_router(traces_router)
+    app.include_router(admin_router)
+
+    @app.websocket("/ws/chat/{conversation_id}")
+    async def websocket_chat(websocket: WebSocket, conversation_id: str) -> None:
+        customer_id = websocket.query_params.get("customer_id", "anonymous")
+        await handle_websocket(websocket, conversation_id, customer_id)
 
     return app
 
