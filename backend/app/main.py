@@ -31,13 +31,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         debug=settings.debug,
     )
 
-    await init_db()
-    logger.info("database_initialized")
+    try:
+        await init_db()
+        logger.info("database_initialized")
+    except Exception as e:
+        logger.warning("database_init_failed", error=str(e))
+        logger.info("running_without_database")
 
     yield
 
-    await close_redis()
-    await close_db()
+    try:
+        await close_redis()
+    except Exception:
+        pass
+    try:
+        await close_db()
+    except Exception:
+        pass
     logger.info("app_shutdown")
 
 
