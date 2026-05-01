@@ -22,18 +22,18 @@ SYSTEM_PROMPT = """你是一个意图分类器。分析用户消息，输出JSON
 - general: 订单查询、产品咨询、其他问题
 
 重要区分：
-- "查订单"、"订单查询" → general（只是查询，不是退款）
-- "退款"、"退货"、"申请退款" → refund（明确要退款）
-- "查账单"、"发票" → billing
+- "查订单"、"订单查询"、"check orders" → general（只是查询，不是退款）
+- "退款"、"退货"、"申请退款"、"refund" → refund（明确要退款）
+- "查账单"、"发票"、"billing" → billing
 
 输出格式（仅输出JSON，不要其他内容）：
 {"intent": "billing", "confidence": 0.9, "reasoning": "理由"}"""
 
 INTENT_KEYWORDS = {
-    IntentType.ESCALATION: ["转人工", "找人工", "真人客服", "人工服务", "转接人工"],
-    IntentType.BILLING: ["账单", "发票", "扣费", "付款", "充值", "缴费", "欠费"],
-    IntentType.REFUND: ["退款", "退货", "退钱", "退费", "退订", "申请退款", "退款申请", "退货退款"],
-    IntentType.TECHNICAL: ["故障", "设备", "技术", "坏了", "不开机", "无法", "bug", "报错", "屏幕", "闪烁", "换货", "维修", "怎么办"],
+    IntentType.ESCALATION: ["转人工", "找人工", "真人客服", "人工服务", "转接人工", "transfer to human", "human agent"],
+    IntentType.BILLING: ["账单", "发票", "扣费", "付款", "充值", "缴费", "欠费", "billing", "invoice", "payment"],
+    IntentType.REFUND: ["退款", "退货", "退钱", "退费", "退订", "申请退款", "退款申请", "退货退款", "refund", "return"],
+    IntentType.TECHNICAL: ["故障", "设备", "技术", "坏了", "不开机", "无法", "bug", "报错", "屏幕", "闪烁", "换货", "维修", "怎么办", "technical", "broken", "not working"],
 }
 
 INTENT_MAPPING = {
