@@ -170,13 +170,13 @@ function renderTable(rows: string[], key: number): React.ReactNode {
 
   const headerCells = rows[0]
     .split("|")
-    .filter((cell) => cell.trim())
+    .slice(1, -1)  // Remove first and last empty elements from split
     .map((cell) => cell.trim());
 
   const bodyRows = rows.slice(2).map((row) =>
     row
       .split("|")
-      .filter((cell) => cell.trim())
+      .slice(1, -1)  // Remove first and last empty elements from split
       .map((cell) => cell.trim())
   );
 
@@ -187,7 +187,7 @@ function renderTable(rows: string[], key: number): React.ReactNode {
           <tr className="bg-gray-50">
             {headerCells.map((cell, i) => (
               <th key={i} className="px-3 py-2 text-left border font-medium">
-                {cell}
+                {cell || "\u00A0"}
               </th>
             ))}
           </tr>
@@ -197,7 +197,7 @@ function renderTable(rows: string[], key: number): React.ReactNode {
             <tr key={i} className="hover:bg-gray-50">
               {row.map((cell, j) => (
                 <td key={j} className="px-3 py-2 border">
-                  {cell}
+                  {cell || "\u00A0"}
                 </td>
               ))}
             </tr>
