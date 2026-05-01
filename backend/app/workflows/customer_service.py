@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import re
+import uuid
 
 import structlog
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from backend.app.agents.billing.agent import BillingAgent
+from backend.app.agents.communication import AgentCommunicator, AgentMessage, get_communicator
 from backend.app.agents.general.agent import GeneralAgent
 from backend.app.agents.refund.agent import RefundAgent
 from backend.app.agents.router.agent import RouterAgent
+from backend.app.agents.supervisor.agent import SupervisorAgent
 from backend.app.agents.technical.agent import TechnicalAgent
 from backend.app.models.schemas import IntentType
 from backend.app.services.approval_queue import ApprovalItem, get_approval_queue
@@ -25,12 +29,27 @@ HIGH_RISK_TOOLS = {"process_refund"}
 class CustomerServiceWorkflow:
     def __init__(self, llm_provider: LLMProvider | None = None):
         self.llm_provider = llm_provider or get_llm_provider()
+
+        # 创建所有Agent
         self.router = RouterAgent(self.llm_provider)
+        self.supervisor = SupervisorAgent(self.llm_provider)
         self.billing = BillingAgent(self.llm_provider)
         self.technical = TechnicalAgent(self.llm_provider)
         self.refund = RefundAgent(self.llm_provider)
         self.general = GeneralAgent(self.llm_provider)
+
+        # 初始化通信器
+        self.communicator = get_communicator()
+        self._register_agents()
+
         self._graph: CompiledStateGraph | None = None
+
+    def _register_agents(self) -> None:
+        """注册所有Agent到通信器"""
+        self.communicator.register_agent("billing", self.billing)
+        self.communicator.register_agent("technical", self.technical)
+        self.communicator.register_agent("refund", self.refund)
+        self.communicator.register_agent("general", self.general)
 
     def build_graph(self) -> CompiledStateGraph:
         if self._graph is not None:
@@ -38,32 +57,33 @@ class CustomerServiceWorkflow:
 
         graph = StateGraph(CustomerServiceState)
 
+        # 添加节点
+        graph.add_node("supervisor", self._supervisor_node)
         graph.add_node("router", self._router_node)
-        graph.add_node("billing", self._billing_node)
-        graph.add_node("technical", self._technical_node)
-        graph.add_node("refund", self._refund_node)
-        graph.add_node("general", self._general_node)
-        graph.add_node("escalation", self._escalation_node)
+        graph.add_node("simple_task", self._simple_task_node)
+        graph.add_node("complex_task", self._complex_task_node)
+        graph.add_node("parallel_execution", self._parallel_execution_node)
+        graph.add_node("sequential_execution", self._sequential_execution_node)
+        graph.add_node("aggregate", self._aggregate_node)
         graph.add_node("hitl_check", self._hitl_check_node)
         graph.add_node("response", self._response_node)
 
-        graph.add_edge(START, "router")
+        # 添加边
+        graph.add_edge(START, "supervisor")
         graph.add_conditional_edges(
-            "router",
-            self._route_by_intent,
+            "supervisor",
+            self._decide_execution_strategy,
             {
-                "billing": "billing",
-                "technical": "technical",
-                "refund": "refund",
-                "general": "general",
-                "escalation": "escalation",
+                "simple": "simple_task",
+                "complex": "complex_task",
+                "escalation": "response",
             },
         )
-        graph.add_edge("billing", "response")
-        graph.add_edge("technical", "response")
-        graph.add_edge("refund", "hitl_check")
-        graph.add_edge("general", "response")
-        graph.add_edge("escalation", "response")
+        graph.add_edge("simple_task", "hitl_check")
+        graph.add_edge("complex_task", "aggregate")
+        graph.add_edge("parallel_execution", "aggregate")
+        graph.add_edge("sequential_execution", "aggregate")
+        graph.add_edge("aggregate", "hitl_check")
         graph.add_conditional_edges(
             "hitl_check",
             self._hitl_decision,
@@ -98,14 +118,44 @@ class CustomerServiceWorkflow:
             "human_approved": False,
             "human_comment": None,
             "token_usage": {},
-            "trace_id": "",
+            "trace_id": str(uuid.uuid4()),
         }
         result = await graph.ainvoke(initial_state)
         return result
 
-    async def _router_node(self, state: CustomerServiceState) -> dict:
+    async def _supervisor_node(self, state: CustomerServiceState) -> dict:
+        """Supervisor节点：分析任务复杂度，决定执行策略"""
         messages = state["messages"]
-        logger.info("router_node_messages", count=len(messages), types=[type(m).__name__ for m in messages])
+        user_text = " ".join(
+            m.content if hasattr(m, "content") else str(m)
+            for m in messages
+        )
+
+        logger.info("supervisor_analyzing", user_text=user_text[:200])
+
+        # 分析任务
+        analysis = await self.supervisor.decompose_task(user_text)
+
+        return {
+            "current_intent": "complex" if analysis.get("is_complex") else "simple",
+            "routing_reasoning": analysis.get("reasoning", ""),
+            "active_agent": "supervisor",
+        }
+
+    def _decide_execution_strategy(self, state: CustomerServiceState) -> str:
+        """决定执行策略：简单任务、复杂任务或升级"""
+        intent = state["current_intent"]
+
+        if intent == "escalation":
+            return "escalation"
+        elif intent == "complex":
+            return "complex"
+        else:
+            return "simple"
+
+    async def _router_node(self, state: CustomerServiceState) -> dict:
+        """路由节点：为简单任务选择Agent"""
+        messages = state["messages"]
         decision = await self.router.classify_intent(messages)
 
         return {
@@ -115,24 +165,21 @@ class CustomerServiceWorkflow:
             "active_agent": decision.suggested_agent,
         }
 
-    def _route_by_intent(self, state: CustomerServiceState) -> str:
-        intent = state["current_intent"]
-        confidence = state["routing_confidence"]
+    async def _simple_task_node(self, state: CustomerServiceState) -> dict:
+        """简单任务节点：单个Agent处理"""
+        messages = state["messages"]
+        agent_name = state["active_agent"]
 
-        if confidence < 0.5:
-            logger.info("low_confidence_escalation", confidence=confidence)
-            return "escalation"
+        # 获取对应的Agent
+        agent_map = {
+            "billing": self.billing,
+            "technical": self.technical,
+            "refund": self.refund,
+            "general": self.general,
+        }
+        agent = agent_map.get(agent_name, self.general)
 
-        return intent
-
-    @staticmethod
-    def _strip_think_tags(content: str) -> str:
-        return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-
-    async def _run_agent(self, agent, state: CustomerServiceState, agent_name: str) -> dict:
-        logger.info("agent_node_start", agent=agent_name)
         try:
-            messages = state["messages"]
             response = await agent.run(messages)
             content = response.content if isinstance(response.content, str) else str(response.content)
             content = self._strip_think_tags(content)
@@ -143,35 +190,126 @@ class CustomerServiceWorkflow:
 
             return {
                 "agent_response": content,
-                "active_agent": agent_name,
                 "tools_called": tools_called,
             }
         except Exception:
-            logger.exception("agent_node_error", agent=agent_name)
+            logger.exception("simple_task_error", agent=agent_name)
             return {
-                "agent_response": "抱歉，处理您的请求时出现了问题，请稍后重试或转接人工客服。",
-                "active_agent": agent_name,
+                "agent_response": "抱歉，处理您的请求时出现了问题，请稍后重试。",
             }
 
-    async def _billing_node(self, state: CustomerServiceState) -> dict:
-        return await self._run_agent(self.billing, state, "billing")
+    async def _complex_task_node(self, state: CustomerServiceState) -> dict:
+        """复杂任务节点：拆解并协调多Agent"""
+        messages = state["messages"]
+        user_text = " ".join(
+            m.content if hasattr(m, "content") else str(m)
+            for m in messages
+        )
 
-    async def _technical_node(self, state: CustomerServiceState) -> dict:
-        return await self._run_agent(self.technical, state, "technical")
+        # 重新分析获取详细的任务计划
+        analysis = await self.supervisor.decompose_task(user_text)
 
-    async def _refund_node(self, state: CustomerServiceState) -> dict:
-        return await self._run_agent(self.refund, state, "refund")
+        if not analysis.get("sub_tasks"):
+            # 如果没有子任务，回退到简单处理
+            return await self._simple_task_node(state)
 
-    async def _general_node(self, state: CustomerServiceState) -> dict:
-        return await self._run_agent(self.general, state, "general")
+        sub_tasks = analysis["sub_tasks"]
+        execution_order = analysis.get("execution_order", [])
 
-    async def _escalation_node(self, state: CustomerServiceState) -> dict:
-        logger.info("agent_node", agent="escalation")
+        # 执行子任务
+        agent_results = {}
+
+        if execution_order:
+            # 按照指定顺序执行（支持并行）
+            for parallel_group in execution_order:
+                group_tasks = []
+                for task_id in parallel_group:
+                    task = next((t for t in sub_tasks if t["id"] == task_id), None)
+                    if task:
+                        group_tasks.append(task)
+
+                if len(group_tasks) > 1:
+                    # 并行执行
+                    results = await self.communicator.broadcast(
+                        sender="supervisor",
+                        receivers=[t["agent"] for t in group_tasks],
+                        content=user_text,
+                        context={"task_description": "\n".join(t["description"] for t in group_tasks)},
+                    )
+                    for agent_name, response in results.items():
+                        if response.success:
+                            agent_results[agent_name] = response.content
+                else:
+                    # 单个任务
+                    task = group_tasks[0]
+                    response = await self.communicator.send_message(
+                        AgentMessage(
+                            sender="supervisor",
+                            receiver=task["agent"],
+                            content=task["description"],
+                            context={"original_request": user_text},
+                        )
+                    )
+                    if response.success:
+                        agent_results[task["agent"]] = response.content
+        else:
+            # 默认并行执行所有任务
+            results = await self.communicator.broadcast(
+                sender="supervisor",
+                receivers=[t["agent"] for t in sub_tasks],
+                content=user_text,
+            )
+            for agent_name, response in results.items():
+                if response.success:
+                    agent_results[agent_name] = response.content
+
         return {
-            "agent_response": "您的问题需要人工客服处理，正在为您转接，请稍候...",
-            "active_agent": "escalation",
-            "needs_human": True,
+            "agent_response": str(agent_results),  # 临时存储，后续聚合
+            "active_agent": "supervisor",
         }
+
+    async def _parallel_execution_node(self, state: CustomerServiceState) -> dict:
+        """并行执行节点"""
+        # This is handled within complex_task_node
+        return {}
+
+    async def _sequential_execution_node(self, state: CustomerServiceState) -> dict:
+        """串行执行节点"""
+        # This is handled within complex_task_node
+        return {}
+
+    async def _aggregate_node(self, state: CustomerServiceState) -> dict:
+        """聚合节点：汇总多Agent结果"""
+        messages = state["messages"]
+        user_text = " ".join(
+            m.content if hasattr(m, "content") else str(m)
+            for m in messages
+        )
+
+        # 获取各Agent的结果
+        agent_response = state.get("agent_response", "{}")
+
+        try:
+            # 尝试解析为JSON
+            import json
+            agent_results = json.loads(agent_response)
+        except (json.JSONDecodeError, TypeError):
+            agent_results = {"general": agent_response}
+
+        # 聚合结果
+        final_response = await self.supervisor.aggregate_results(
+            original_request=user_text,
+            agent_results=agent_results,
+        )
+
+        return {
+            "agent_response": final_response,
+            "active_agent": "supervisor",
+        }
+
+    @staticmethod
+    def _strip_think_tags(content: str) -> str:
+        return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
     async def _hitl_check_node(self, state: CustomerServiceState) -> dict:
         tools_called = state.get("tools_called", [])
