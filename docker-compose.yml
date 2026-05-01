@@ -30,6 +30,38 @@ services:
       timeout: 5s
       retries: 3
 
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://smartcs:smartcs@postgres:5432/smartcs
+      REDIS_URL: redis://redis:6379/0
+      LLM_PROVIDER: minimax
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY}
+      DEFAULT_MODEL: MiniMax-M2.7
+      APP_ENV: production
+      DEBUG: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - chroma_data:/app/chroma_db
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
 volumes:
   redis_data:
   postgres_data:
+  chroma_data:
