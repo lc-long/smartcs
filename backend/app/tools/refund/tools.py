@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from backend.app.core.database import get_session_factory
 from backend.app.models.db.ecommerce import Order, OrderItem, Refund
+from backend.app.services.workflows.refund import get_refund_workflow
 
 
 @tool
@@ -96,12 +97,20 @@ async def refund_eligibility(order_no: str) -> str:
                 eligible = False
                 reason = f"订单状态({order.status})不允许退款"
 
+            # 获取审批级别
+            workflow = get_refund_workflow()
+            approval_level = workflow.determine_approval_level(float(order.total_amount))
+
             return json.dumps({
                 "order_no": order_no,
                 "eligible": eligible,
                 "reason": reason,
                 "order_status": order.status,
                 "order_amount": float(order.total_amount),
+                "approval_level": approval_level.value,
+                "approval_description": workflow.get_approval_description(
+                    type('obj', (object,), {'required_approval': approval_level})()
+                ),
             }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)
@@ -109,7 +118,10 @@ async def refund_eligibility(order_no: str) -> str:
 
 @tool
 async def process_refund(order_no: str, amount: float, reason: str) -> str:
-    """处理退款申请。
+    """处理退款申请。根据金额自动确定审批级别：
+    - ≤500元：客服可直接处理
+    - 500-2000元：需要主管审批
+    - >2000元：需要财务审批
 
     Args:
         order_no: 订单号
@@ -133,15 +145,38 @@ async def process_refund(order_no: str, amount: float, reason: str) -> str:
                     "error": f"退款金额({amount})超过订单金额({float(order.total_amount)})"
                 }, ensure_ascii=False)
 
+            # 使用退款工作流
+            workflow = get_refund_workflow()
+            refund_request = workflow.create_request(
+                order_no=order_no,
+                customer_id=order.customer_id,
+                amount=amount,
+                reason=reason,
+            )
+
+            # 根据审批级别处理
+            if refund_request.required_approval.value == "agent":
+                # 客服可直接批准
+                workflow.approve(refund_request, approver="system_agent", comment="客服直接批准")
+                initial_status = "approved"
+                message = f"退款申请已批准（客服直接处理），金额: ¥{amount}，预计3-5个工作日到账"
+            else:
+                # 需要主管或财务审批
+                initial_status = "pending"
+                if refund_request.required_approval.value == "supervisor":
+                    message = f"退款申请已提交，需要主管审批（金额: ¥{amount}），预计1-2个工作日完成审批"
+                else:
+                    message = f"退款申请已提交，需要财务审批（金额: ¥{amount}），预计3-5个工作日完成审批"
+
             # 创建退款记录
-            refund_no = f"REF-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
+            refund_no = refund_request.id
             refund = Refund(
                 refund_no=refund_no,
                 order_id=order.id,
                 customer_id=order.customer_id,
                 amount=amount,
                 reason=reason,
-                status="pending",
+                status=initial_status,
             )
             session.add(refund)
             await session.commit()
@@ -151,8 +186,10 @@ async def process_refund(order_no: str, amount: float, reason: str) -> str:
                 "order_no": order_no,
                 "amount": amount,
                 "reason": reason,
-                "status": "pending",
-                "message": "退款申请已提交，等待审批",
+                "status": initial_status,
+                "approval_level": refund_request.required_approval.value,
+                "approval_chain": refund_request.approval_chain,
+                "message": message,
             }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"退款处理失败: {str(e)}"}, ensure_ascii=False)

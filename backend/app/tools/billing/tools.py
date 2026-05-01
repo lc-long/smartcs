@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 from sqlalchemy import select
 
 from backend.app.core.database import get_session_factory
-from backend.app.models.db.ecommerce import Invoice, Order, Payment
+from backend.app.models.db.ecommerce import Invoice, Order, OrderItem, Payment, Refund
 
 
 @tool
@@ -135,3 +135,71 @@ async def billing_summary(customer_id: str) -> str:
             return json.dumps(summary, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)
+
+
+@tool
+async def order_payment_match(order_no: str) -> str:
+    """核对订单与支付记录是否匹配，用于账单异常排查。
+
+    Args:
+        order_no: 订单号
+    """
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            # 查询订单
+            order_result = await session.execute(
+                select(Order).where(Order.order_no == order_no)
+            )
+            order = order_result.scalar_one_or_none()
+
+            if not order:
+                return json.dumps({"error": f"未找到订单: {order_no}"}, ensure_ascii=False)
+
+            # 查询订单商品
+            items_result = await session.execute(
+                select(OrderItem).where(OrderItem.order_id == order.id)
+            )
+            items = items_result.scalars().all()
+
+            # 查询支付记录
+            payment_result = await session.execute(
+                select(Payment).where(Payment.order_id == order.id)
+            )
+            payments = payment_result.scalars().all()
+
+            # 查询退款记录
+            refund_result = await session.execute(
+                select(Refund).where(Refund.order_id == order.id)
+            )
+            refunds = refund_result.scalars().all()
+
+            total_paid = sum(float(p.amount) for p in payments if p.status == "completed")
+            total_refunded = sum(float(r.amount) for r in refunds if r.status in ["approved", "completed"])
+            order_amount = float(order.total_amount)
+
+            match_result = {
+                "order_no": order_no,
+                "order_amount": order_amount,
+                "total_paid": total_paid,
+                "total_refunded": total_refunded,
+                "net_amount": total_paid - total_refunded,
+                "is_matched": abs(order_amount - total_paid) < 0.01,
+                "difference": order_amount - total_paid,
+                "items": [
+                    {"name": i.product_name, "quantity": i.quantity, "price": float(i.unit_price)}
+                    for i in items
+                ],
+                "payments": [
+                    {"payment_no": p.payment_no, "amount": float(p.amount), "status": p.status}
+                    for p in payments
+                ],
+                "refunds": [
+                    {"refund_no": r.refund_no, "amount": float(r.amount), "status": r.status}
+                    for r in refunds
+                ],
+            }
+
+            return json.dumps(match_result, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"核对失败: {str(e)}"}, ensure_ascii=False)

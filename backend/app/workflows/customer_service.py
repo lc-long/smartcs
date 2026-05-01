@@ -256,7 +256,9 @@ class CustomerServiceWorkflow:
 
         # 低置信度时默认路由到通用Agent
         if confidence < 0.3:
-            return "general"
+            # 修复：返回 "simple" 并设置 active_agent 为 general
+            state["active_agent"] = "general"
+            return "simple"
 
         return "simple"
 
@@ -292,13 +294,9 @@ class CustomerServiceWorkflow:
             )
 
         try:
-            response = await agent.run(messages, customer_id=customer_id)
+            response, tools_called = await agent.run(messages, customer_id=customer_id)
             content = response.content if isinstance(response.content, str) else str(response.content)
             content = self._strip_think_tags(content)
-
-            tools_called = []
-            if hasattr(response, "tool_calls") and response.tool_calls:
-                tools_called = [tc["name"] for tc in response.tool_calls]
 
             # 记录结果到工作记忆
             if working_memory:
@@ -461,7 +459,7 @@ class CustomerServiceWorkflow:
             )
 
         try:
-            response = await agent.run(messages, customer_id=customer_id)
+            response, tools_called = await agent.run(messages, customer_id=customer_id)
             content = response.content if isinstance(response.content, str) else str(response.content)
             content = self._strip_think_tags(content)
 
@@ -469,10 +467,17 @@ class CustomerServiceWorkflow:
             await self._emit_event("subtask_complete", {
                 "agent": agent_name,
                 "success": True,
+                "tools_called": tools_called,
             })
 
             if working_memory:
                 working_memory.add_result(content, agent_name)
+                for tool in tools_called:
+                    working_memory.add_action(
+                        f"调用工具: {tool}",
+                        tool=tool,
+                        agent=agent_name,
+                    )
 
             return content
         except Exception as e:

@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
-from backend.app.tools.billing.tools import billing_summary, invoice_lookup, payment_history
+from backend.app.tools.billing.tools import billing_summary, invoice_lookup, order_payment_match, payment_history
 
 logger = structlog.get_logger()
 
@@ -51,7 +51,7 @@ class BillingAgent(BaseAgent):
         )
 
     def get_tools(self):
-        return [invoice_lookup, payment_history, billing_summary]
+        return [invoice_lookup, payment_history, billing_summary, order_payment_match]
 
     def get_system_prompt(self):
         return SYSTEM_PROMPT

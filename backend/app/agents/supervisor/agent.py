@@ -52,15 +52,24 @@ class SupervisorAgent(BaseAgent):
     PLANNING_PROMPT = """你是一个任务规划专家。分析用户请求，判断是否需要多个Agent协作完成。
 
 可用的Agent：
-- billing: 账单相关（发票、支付、扣费查询）
-- technical: 技术支持（故障排查、设备问题、知识库搜索）
-- refund: 退款处理（订单查询、退款判断、退款执行）
-- general: 通用问答（FAQ、公司信息）
+- billing: 账单相关（发票、支付、扣费查询、账单核对）
+- technical: 技术支持（故障排查、设备问题、知识库搜索、创建工单）
+- refund: 退款处理（订单查询、退款判断、退款执行、退款状态查询）
+- general: 通用问答（FAQ、公司信息、客户信息查询）
 
-对于简单任务，只分配一个Agent。
-对于复杂任务，拆解成多个子任务，并指定执行顺序。
+## 判断复杂任务的标准：
+1. 用户请求涉及多个不同领域（如同时涉及退款和账单）
+2. 用户请求需要多个步骤完成（如先查订单，再核对账单）
+3. 用户请求涉及对比或汇总多个信息源
 
-输出JSON格式：
+## 常见复杂任务场景：
+- "我要退款，顺便查下账单" → refund + billing
+- "订单有问题，帮我查下支付记录" → refund + billing
+- "设备坏了，我要退货退款" → technical + refund
+- "帮我核对下订单和支付是否匹配" → billing（使用order_payment_match工具）
+- "我要投诉，找人工" → escalation
+
+## 输出JSON格式：
 {{
     "is_complex": true/false,
     "reasoning": "分析原因",
@@ -82,6 +91,13 @@ class SupervisorAgent(BaseAgent):
 
 各Agent执行结果：
 {agent_results}
+
+## 汇总要求：
+1. 将各Agent的结果整合成一个连贯的回复
+2. 如果有冲突信息，以更详细的结果为准
+3. 使用表格展示关键数据
+4. 主动提供下一步建议
+5. 保持专业友好的语气
 
 请生成一个完整、连贯的回复给用户。"""
 
@@ -145,7 +161,7 @@ class SupervisorAgent(BaseAgent):
     ) -> str:
         """汇总多个Agent的结果，生成最终回复"""
         results_text = "\n".join(
-            f"- {agent}: {result[:500]}" for agent, result in agent_results.items()
+            f"- {agent}: {result[:1000]}" for agent, result in agent_results.items()
         )
 
         prompt = SystemMessage(

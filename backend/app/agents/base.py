@@ -7,7 +7,7 @@ from typing import Any
 
 import structlog
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
 from backend.app.services.llm.provider import LLMProvider
@@ -91,13 +91,18 @@ class BaseAgent(ABC):
         messages: list[BaseMessage],
         tools: list[BaseTool] | None = None,
         max_iterations: int = 5,
-    ) -> AIMessage:
-        """调用 LLM 并执行工具调用（ReAct 风格）"""
+    ) -> tuple[AIMessage, list[str]]:
+        """调用 LLM 并执行工具调用（ReAct 风格）
+
+        Returns:
+            tuple: (最终响应, 所有调用过的工具名称列表)
+        """
         tools = tools or self.get_tools()
         tool_map = {t.name: t for t in tools}
 
         current_messages = list(messages)
         last_response = None
+        all_tools_called = []  # 累积所有调用过的工具
 
         for i in range(max_iterations):
             # 调用 LLM
@@ -106,7 +111,7 @@ class BaseAgent(ABC):
 
             # 如果没有工具调用，返回结果
             if not response.tool_calls:
-                return response
+                return response, all_tools_called
 
             # 执行工具调用
             tool_results = []
@@ -114,6 +119,10 @@ class BaseAgent(ABC):
                 tool_name = tc["name"]
                 tool_args = tc["args"]
                 tool_id = tc["id"]
+
+                # 记录工具调用
+                if tool_name not in all_tools_called:
+                    all_tools_called.append(tool_name)
 
                 logger.info(
                     "tool_call",
@@ -127,26 +136,29 @@ class BaseAgent(ABC):
                 if tool:
                     try:
                         result = await tool.ainvoke(tool_args)
-                        tool_results.append({
-                            "tool_call_id": tool_id,
-                            "role": "tool",
-                            "content": str(result),
-                        })
+                        tool_results.append(
+                            ToolMessage(
+                                content=str(result),
+                                tool_call_id=tool_id,
+                            )
+                        )
                     except Exception as e:
-                        tool_results.append({
-                            "tool_call_id": tool_id,
-                            "role": "tool",
-                            "content": f"工具执行失败: {str(e)}",
-                        })
+                        tool_results.append(
+                            ToolMessage(
+                                content=f"工具执行失败: {str(e)}",
+                                tool_call_id=tool_id,
+                            )
+                        )
                 else:
-                    tool_results.append({
-                        "tool_call_id": tool_id,
-                        "role": "tool",
-                        "content": f"未知工具: {tool_name}",
-                    })
+                    tool_results.append(
+                        ToolMessage(
+                            content=f"未知工具: {tool_name}",
+                            tool_call_id=tool_id,
+                        )
+                    )
 
             # 将工具结果添加到消息中
             current_messages.append(response)
             current_messages.extend(tool_results)
 
-        return last_response
+        return last_response, all_tools_called
