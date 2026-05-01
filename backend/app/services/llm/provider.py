@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import structlog
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage
 
 from backend.app.core.config.settings import Settings, get_settings
 
@@ -30,12 +29,25 @@ class LLMProvider:
         return llm
 
     def _create_llm(self, model_name: str, temperature: float) -> BaseChatModel:
-        if model_name.startswith("gpt") or model_name.startswith("o1"):
-            return self._create_openai_llm(model_name, temperature)
-        elif model_name.startswith("claude"):
+        provider = self._settings.llm_provider
+
+        if provider == "minimax":
+            return self._create_minimax_llm(model_name, temperature)
+        elif provider == "anthropic" or model_name.startswith("claude"):
             return self._create_anthropic_llm(model_name, temperature)
         else:
             return self._create_openai_llm(model_name, temperature)
+
+    def _create_minimax_llm(self, model_name: str, temperature: float) -> BaseChatModel:
+        from langchain_openai import ChatOpenAI
+
+        logger.info("creating_minimax_llm", model=model_name, temperature=temperature)
+        return ChatOpenAI(
+            model=model_name,
+            temperature=temperature,
+            api_key=self._settings.minimax_api_key,
+            base_url=self._settings.minimax_base_url,
+        )
 
     def _create_openai_llm(self, model_name: str, temperature: float) -> BaseChatModel:
         from langchain_openai import ChatOpenAI

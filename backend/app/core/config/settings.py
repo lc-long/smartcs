@@ -42,14 +42,17 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     anthropic_api_key: str = ""
+    minimax_api_key: str = ""
+    minimax_base_url: str = "https://api.minimax.chat/v1"
 
     # Model Configuration
-    default_model: str = "gpt-4o-mini"
-    router_model: str = "gpt-4o-mini"
-    billing_model: str = "gpt-4o"
-    technical_model: str = "gpt-4o"
-    refund_model: str = "gpt-4o"
-    general_model: str = "gpt-4o-mini"
+    llm_provider: str = "minimax"
+    default_model: str = "MiniMax-Text-01"
+    router_model: str = "MiniMax-Text-01"
+    billing_model: str = "MiniMax-Text-01"
+    technical_model: str = "MiniMax-Text-01"
+    refund_model: str = "MiniMax-Text-01"
+    general_model: str = "MiniMax-Text-01"
 
     # Vector Database
     chroma_persist_dir: str = "./chroma_db"
