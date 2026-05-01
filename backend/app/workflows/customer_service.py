@@ -20,6 +20,7 @@ from backend.app.models.schemas import IntentType
 from backend.app.services.approval_queue import ApprovalItem, get_approval_queue
 from backend.app.services.llm.provider import LLMProvider, get_llm_provider
 from backend.app.services.memory.working import WorkingMemory, WorkingMemoryStore, get_working_memory_store
+from backend.app.services.sentiment.analyzer import get_sentiment_analyzer
 from backend.app.workflows.state import CustomerServiceState
 
 logger = structlog.get_logger()
@@ -160,6 +161,40 @@ class CustomerServiceWorkflow:
 
         # 发送规划开始事件
         await self._emit_event("planning", {"status": "analyzing"})
+
+        # 情绪分析
+        sentiment_analyzer = get_sentiment_analyzer()
+        user_messages = [
+            m.content for m in messages
+            if hasattr(m, "content") and isinstance(m.content, str)
+        ]
+        sentiment = sentiment_analyzer.analyze(user_messages)
+
+        # 发送情绪分析结果
+        await self._emit_event("sentiment", {
+            "level": sentiment.level.value,
+            "score": sentiment.score,
+            "should_escalate": sentiment.should_escalate,
+        })
+
+        # 如果情绪非常负面，自动升级
+        if sentiment.should_escalate:
+            logger.info(
+                "sentiment_escalation",
+                level=sentiment.level.value,
+                reason=sentiment.escalation_reason,
+            )
+            if working_memory:
+                working_memory.add_thought(
+                    f"检测到用户情绪负面（{sentiment.level.value}），原因：{sentiment.escalation_reason}",
+                    agent="sentiment_analyzer",
+                )
+            return {
+                "current_intent": "escalation",
+                "routing_confidence": 0.95,
+                "routing_reasoning": sentiment.escalation_reason,
+                "active_agent": "escalation",
+            }
 
         # 使用Supervisor进行任务规划
         plan = await self.supervisor.plan_task(user_text)
