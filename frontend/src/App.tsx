@@ -82,16 +82,16 @@ function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <nav className="w-20 bg-white border-r flex flex-col items-center py-4 gap-1">
-        <div className="mb-4">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      <nav className="w-20 bg-white border-r flex flex-col items-center py-4 gap-1 overflow-y-auto flex-shrink-0">
+        <div className="mb-4 flex-shrink-0">
           <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">
             S
           </div>
         </div>
 
         {Object.entries(groups).map(([groupName, items]) => (
-          <div key={groupName} className="w-full">
+          <div key={groupName} className="w-full flex-shrink-0">
             <div className="px-2 py-1">
               <p className="text-[10px] text-gray-400 text-center uppercase">
                 {groupName}
@@ -118,7 +118,7 @@ function AppLayout() {
         <div className="flex-1"></div>
 
         {/* 用户信息 */}
-        <div className="w-full px-2 py-2 border-t">
+        <div className="w-full px-2 py-2 border-t flex-shrink-0">
           <div className="text-center mb-2">
             <span className={`text-xs px-2 py-0.5 rounded-full ${roleColors[user?.role || "viewer"]}`}>
               {roleLabels[user?.role || "viewer"]}
