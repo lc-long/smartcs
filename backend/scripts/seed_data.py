@@ -52,6 +52,7 @@ async def seed_database():
             Product(id="P008", sku="STRAP-001", name="表带套装", description="3条不同风格表带，适配智能手表Pro/Lite", category="配件", price=Decimal("99.00"), stock=800, warranty_months=3),
         ]
         session.add_all(products)
+        await session.commit()
 
         # 2. 创建客户
         customers = [
@@ -62,6 +63,7 @@ async def seed_database():
             Customer(id="C005", name="钱七", email="qianqi@example.com", phone="13800138005", address="杭州市西湖区文三路90号", vip_level="normal"),
         ]
         session.add_all(customers)
+        await session.commit()
 
         # 3. 创建订单
         orders = [
@@ -74,6 +76,7 @@ async def seed_database():
             Order(id="O007", order_no="ORD-20260425-001", customer_id="C002", status="processing", total_amount=Decimal("1299.00"), shipping_address="上海市浦东新区陆家嘴100号"),
         ]
         session.add_all(orders)
+        await session.commit()
 
         # 4. 创建订单商品
         order_items = [
@@ -136,7 +139,8 @@ async def seed_database():
         session.add_all(articles)
 
         await session.commit()
-        print("✅ 测试数据填充完成！")
+
+        print("[OK] 测试数据填充完成！")
         print(f"  - 商品: {len(products)} 个")
         print(f"  - 客户: {len(customers)} 个")
         print(f"  - 订单: {len(orders)} 个")
