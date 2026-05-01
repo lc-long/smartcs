@@ -1,0 +1,15 @@
+{
+  "rules": {
+    "type-enum": [
+      2,
+      "always",
+      ["feat", "fix", "refactor", "build", "chore", "docs", "test"]
+    ],
+    "type-case": [2, "always", "lower-case"],
+    "type-empty": [2, "never"],
+    "subject-empty": [2, "never"],
+    "subject-full-stop": [2, "never", "."],
+    "header-max-length": [2, "always", 100]
+  },
+  "help": "Commit message format: type(scope): description\n\nTypes:\n  feat:     New feature\n  fix:      Bug fix\n  refactor: Code refactoring\n  build:    Build system changes\n  chore:    Maintenance tasks\n  docs:     Documentation\n  test:     Tests\n\nRules:\n  - All commit messages MUST be written in English\n  - Follow Conventional Commits standard\n  - Max header length: 100 characters"
+}
