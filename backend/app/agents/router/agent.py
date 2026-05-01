@@ -25,10 +25,10 @@ SYSTEM_PROMPT = """你是一个意图分类器。分析用户消息，输出JSON
 {"intent": "billing", "confidence": 0.9, "reasoning": "理由"}"""
 
 INTENT_KEYWORDS = {
-    IntentType.ESCALATION: ["人工", "转人工", "找人工", "真人"],
-    IntentType.BILLING: ["账单", "发票", "扣费", "付款", "充值", "缴费", "欠费"],
-    IntentType.REFUND: ["退款", "退货", "退钱", "退费", "退订"],
-    IntentType.TECHNICAL: ["故障", "设备", "技术", "坏了", "不开机", "无法", "bug", "报错"],
+    IntentType.ESCALATION: ["人工", "转人工", "找人工", "真人", "客服"],
+    IntentType.BILLING: ["账单", "发票", "扣费", "付款", "充值", "缴费", "欠费", "账单查询", "查账单"],
+    IntentType.REFUND: ["退款", "退货", "退钱", "退费", "退订", "订单", "查订单", "订单查询"],
+    IntentType.TECHNICAL: ["故障", "设备", "技术", "坏了", "不开机", "无法", "bug", "报错", "怎么办", "问题", "屏幕", "闪烁"],
 }
 
 INTENT_MAPPING = {
@@ -61,10 +61,12 @@ class RouterAgent(BaseAgent):
     async def classify_intent(self, messages: list[BaseMessage]) -> RouteDecision:
         logger.info("router_classify_start", message_count=len(messages))
 
+        # 只分析最后一条用户消息
         user_text = ""
-        for msg in messages:
-            if hasattr(msg, "content"):
-                user_text += str(msg.content) + " "
+        for msg in reversed(messages):
+            if hasattr(msg, "content") and isinstance(msg.content, str) and msg.content.strip():
+                user_text = msg.content
+                break
 
         logger.info("router_user_text", text=user_text[:200])
 

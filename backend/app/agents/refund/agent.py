@@ -33,11 +33,12 @@ class RefundAgent(BaseAgent):
         return SYSTEM_PROMPT
 
     async def run(self, messages: list[BaseMessage], **kwargs) -> AIMessage:
-        # 提取用户信息
-        user_text = " ".join(
-            m.content if hasattr(m, "content") else str(m)
-            for m in messages
-        )
+        # 提取最后一条用户消息
+        user_text = ""
+        for msg in reversed(messages):
+            if hasattr(msg, "content") and isinstance(msg.content, str) and msg.content.strip():
+                user_text = msg.content
+                break
 
         # 提取客户ID和订单号
         customer_id = self._extract_customer_id(user_text)
