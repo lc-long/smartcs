@@ -26,6 +26,10 @@ class ApprovalItem(BaseModel):
 
 
 class ApprovalQueue:
+    """In-memory approval queue for development/testing.
+    In production, use ApprovalRepository with PostgreSQL.
+    """
+
     def __init__(self):
         self._queue: dict[str, ApprovalItem] = {}
 
