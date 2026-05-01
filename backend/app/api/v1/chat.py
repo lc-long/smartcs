@@ -5,10 +5,12 @@ import time
 from uuid import UUID, uuid4
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 
+from backend.app.api.v1.auth import get_current_user
+from backend.app.models.db.user import User
 from backend.app.models.schemas import (
     ChatMessage,
     ChatRequest,
@@ -24,14 +26,32 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+) -> ChatResponse:
     start_time = time.time()
+
+    # 数据隔离：普通用户只能访问自己的数据
+    if current_user.role == "viewer":
+        if current_user.customer_id and request.customer_id != current_user.customer_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only access your own data",
+            )
+        # 强制使用用户关联的客户ID
+        customer_id = current_user.customer_id or request.customer_id
+    else:
+        # 管理员和客服可以访问任何客户的数据
+        customer_id = request.customer_id
 
     conversation_id = request.conversation_id or uuid4()
     logger.info(
         "chat_request",
         conversation_id=str(conversation_id),
-        customer_id=request.customer_id,
+        customer_id=customer_id,
+        user_id=current_user.id,
+        user_role=current_user.role,
     )
 
     messages = [HumanMessage(content=request.message)]
@@ -40,7 +60,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     result = await workflow.run(
         messages=messages,
         conversation_id=str(conversation_id),
-        customer_id=request.customer_id,
+        customer_id=customer_id,
     )
 
     latency_ms = int((time.time() - start_time) * 1000)
