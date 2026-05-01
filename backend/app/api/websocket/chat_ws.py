@@ -138,6 +138,7 @@ async def _run_workflow_with_events(
         messages=messages,
         conversation_id=conversation_id,
         customer_id=customer_id,
+        emit_callback=emit_callback,
     )
 
     if result.get("needs_human"):

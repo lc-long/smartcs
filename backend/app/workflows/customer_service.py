@@ -99,6 +99,7 @@ class CustomerServiceWorkflow:
         messages: list,
         conversation_id: str,
         customer_id: str,
+        emit_callback=None,
     ) -> CustomerServiceState:
         graph = self.build_graph()
 
@@ -111,6 +112,9 @@ class CustomerServiceWorkflow:
             customer_id=customer_id,
             original_request=user_text,
         )
+
+        # 存储事件回调
+        self._emit_callback = emit_callback
 
         initial_state: CustomerServiceState = {
             "conversation_id": conversation_id,
@@ -136,6 +140,11 @@ class CustomerServiceWorkflow:
 
         return result
 
+    async def _emit_event(self, event_type: str, data: dict) -> None:
+        """发送事件到前端"""
+        if self._emit_callback:
+            await self._emit_callback(event_type, data)
+
     async def _planner_node(self, state: CustomerServiceState) -> dict:
         """规划节点：分析任务复杂度，生成执行计划"""
         messages = state["messages"]
@@ -149,8 +158,19 @@ class CustomerServiceWorkflow:
 
         logger.info("planner_analyzing", user_text=user_text[:200])
 
+        # 发送规划开始事件
+        await self._emit_event("planning", {"status": "analyzing"})
+
         # 使用Supervisor进行任务规划
         plan = await self.supervisor.plan_task(user_text)
+
+        # 发送规划结果事件
+        await self._emit_event("planning", {
+            "status": "completed",
+            "is_complex": plan.is_complex,
+            "reasoning": plan.reasoning,
+            "sub_task_count": len(plan.sub_tasks),
+        })
 
         # 保存计划到工作记忆
         if working_memory:
@@ -226,6 +246,9 @@ class CustomerServiceWorkflow:
 
         logger.info("execute_simple", agent=agent_name, customer_id=customer_id)
 
+        # 发送Agent开始执行事件
+        await self._emit_event("agent_start", {"agent": agent_name})
+
         # 记录到工作记忆
         if working_memory:
             working_memory.add_thought(
@@ -253,6 +276,12 @@ class CustomerServiceWorkflow:
                     )
 
             logger.info("execute_simple_success", agent=agent_name, tools=tools_called)
+
+            # 发送Agent完成事件
+            await self._emit_event("agent_complete", {
+                "agent": agent_name,
+                "tools_called": tools_called,
+            })
 
             return {
                 "agent_response": content,
