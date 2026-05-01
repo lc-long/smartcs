@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useChatStore } from "../../store/chatStore";
 import { useWebSocket } from "../../hooks/useWebSocket";
+import { useAuth } from "../../contexts/AuthContext";
 import type { WSEvent } from "../../types";
 import MessageBubble from "./MessageBubble";
 
@@ -23,8 +24,9 @@ const AGENT_LABELS: Record<string, { name: string; color: string; icon: string }
 };
 
 export default function ChatWindow() {
+  const { user } = useAuth();
   const [input, setInput] = useState("");
-  const [customerId] = useState(() => `C-${Math.random().toString(36).slice(2, 8)}`);
+  const customerId = user?.customer_id || `guest-${user?.id?.slice(0, 8) || "unknown"}`;
   const [conversationId] = useState(() => crypto.randomUUID());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 

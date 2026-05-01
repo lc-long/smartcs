@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -35,6 +35,12 @@ class User(Base):
         String(20),
         nullable=False,
         default="agent",
+    )
+    customer_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("customers.id"),
+        nullable=True,
+        index=True,
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,

@@ -6,6 +6,7 @@ interface User {
   email: string;
   full_name: string;
   role: "admin" | "agent" | "viewer";
+  customer_id: string | null;
 }
 
 interface AuthContextType {
