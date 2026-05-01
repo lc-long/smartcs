@@ -15,20 +15,25 @@ logger = structlog.get_logger()
 SYSTEM_PROMPT = """你是一个意图分类器。分析用户消息，输出JSON格式的分类结果。
 
 意图类别：
-- billing: 账单、发票、支付、扣费
-- technical: 技术、故障、设备、问题、bug
-- refund: 退款、退货、退钱
-- escalation: 人工、转人工
-- general: 其他
+- billing: 账单、发票、支付、扣费相关查询
+- technical: 技术问题、设备故障、产品问题
+- refund: 退款、退货、退钱相关操作（注意：查订单不等于退款）
+- escalation: 用户明确要求人工客服
+- general: 订单查询、产品咨询、其他问题
+
+重要区分：
+- "查订单"、"订单查询" → general（只是查询，不是退款）
+- "退款"、"退货"、"申请退款" → refund（明确要退款）
+- "查账单"、"发票" → billing
 
 输出格式（仅输出JSON，不要其他内容）：
 {"intent": "billing", "confidence": 0.9, "reasoning": "理由"}"""
 
 INTENT_KEYWORDS = {
     IntentType.ESCALATION: ["转人工", "找人工", "真人客服", "人工服务", "转接人工"],
-    IntentType.BILLING: ["账单", "发票", "扣费", "付款", "充值", "缴费", "欠费", "账单查询", "查账单"],
-    IntentType.REFUND: ["退款", "退货", "退钱", "退费", "退订", "订单", "查订单", "订单查询"],
-    IntentType.TECHNICAL: ["故障", "设备", "技术", "坏了", "不开机", "无法", "bug", "报错", "怎么办", "问题", "屏幕", "闪烁", "换货", "维修"],
+    IntentType.BILLING: ["账单", "发票", "扣费", "付款", "充值", "缴费", "欠费"],
+    IntentType.REFUND: ["退款", "退货", "退钱", "退费", "退订", "申请退款", "退款申请", "退货退款"],
+    IntentType.TECHNICAL: ["故障", "设备", "技术", "坏了", "不开机", "无法", "bug", "报错", "屏幕", "闪烁", "换货", "维修", "怎么办"],
 }
 
 INTENT_MAPPING = {
