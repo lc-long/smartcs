@@ -20,6 +20,7 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from backend.app.core.database import close_db, init_db
+    from backend.app.services.redis.client import close_redis
 
     settings = get_settings()
     logger.info(
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
+    await close_redis()
     await close_db()
     logger.info("app_shutdown")
 
