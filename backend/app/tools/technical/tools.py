@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 from langchain_core.tools import tool
+from sqlalchemy import select
+
+from backend.app.core.database import get_session_factory
+from backend.app.models.db.ecommerce import KnowledgeArticle, Product, SupportTicket
 
 
 @tool
 async def knowledge_search(query: str, category: str | None = None, top_k: int = 3) -> str:
-    """从知识库中搜索与查询相关的文档片段。
+    """从知识库中搜索与查询相关的文档。
 
     Args:
         query: 搜索查询
@@ -15,47 +20,52 @@ async def knowledge_search(query: str, category: str | None = None, top_k: int =
         top_k: 返回结果数量，默认3
     """
     try:
-        from backend.app.services.knowledge.chroma import get_knowledge_base
-
-        kb = get_knowledge_base()
-        where = {"category": category} if category else None
-        results = kb.search(query, n_results=top_k, where=where)
-
-        if not results:
-            return json.dumps(
-                [{"content": "未找到相关知识文档", "source": "知识库", "relevance": 0.0}],
-                ensure_ascii=False,
+        factory = get_session_factory()
+        async with factory() as session:
+            # 简单的关键词搜索（生产环境应使用向量搜索）
+            search_query = select(KnowledgeArticle).where(
+                KnowledgeArticle.is_published == True
             )
+            if category:
+                search_query = search_query.where(KnowledgeArticle.category == category)
 
-        formatted = []
-        for r in results:
-            formatted.append(
-                {
-                    "content": r["content"],
-                    "source": r.get("metadata", {}).get("source", "知识库"),
-                    "relevance": round(r.get("score", 0.0), 2),
-                }
-            )
-        return json.dumps(formatted, ensure_ascii=False)
-    except Exception:
-        mock_results = [
-            {
-                "content": "如果您遇到设备无法开机，请先检查电源连接是否正常，然后长按电源键10秒进行强制重启。",
-                "source": "故障排查手册",
-                "relevance": 0.95,
-            },
-            {
-                "content": "设备连接WiFi失败时，请确认WiFi密码正确，路由器工作正常，设备距离路由器不超过10米。",
-                "source": "网络设置指南",
-                "relevance": 0.87,
-            },
-            {
-                "content": "系统更新后如出现异常，请尝试清除缓存并重启设备。如问题持续，请联系技术支持。",
-                "source": "常见问题FAQ",
-                "relevance": 0.82,
-            },
-        ]
-        return json.dumps(mock_results[:top_k], ensure_ascii=False)
+            result = await session.execute(search_query)
+            articles = result.scalars().all()
+
+            # 简单的关键词匹配评分
+            scored = []
+            for article in articles:
+                score = 0
+                query_lower = query.lower()
+                if query_lower in article.title.lower():
+                    score += 3
+                if query_lower in article.content.lower():
+                    score += 2
+                if article.tags and query_lower in article.tags.lower():
+                    score += 1
+                if score > 0:
+                    scored.append((score, article))
+
+            scored.sort(key=lambda x: x[0], reverse=True)
+
+            if not scored:
+                return json.dumps(
+                    [{"content": "未找到相关知识文档", "source": "知识库", "relevance": 0}],
+                    ensure_ascii=False,
+                )
+
+            results = []
+            for score, article in scored[:top_k]:
+                results.append({
+                    "content": article.content[:500],
+                    "source": article.title,
+                    "relevance": min(score / 5, 1.0),
+                    "category": article.category,
+                })
+
+            return json.dumps(results, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"搜索失败: {str(e)}"}, ensure_ascii=False)
 
 
 @tool
@@ -68,43 +78,70 @@ async def ticket_create(customer_id: str, title: str, description: str, priority
         description: 问题描述
         priority: 优先级 (low/medium/high/critical)
     """
-    import uuid
-    ticket = {
-        "ticket_id": f"TK-{uuid.uuid4().hex[:8].upper()}",
-        "customer_id": customer_id,
-        "title": title,
-        "description": description,
-        "priority": priority,
-        "status": "open",
-    }
-    import json
-    return json.dumps(ticket, ensure_ascii=False)
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            ticket_no = f"TK-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
+            ticket = SupportTicket(
+                ticket_no=ticket_no,
+                customer_id=customer_id,
+                category="technical",
+                title=title,
+                description=description,
+                priority=priority,
+                status="open",
+            )
+            session.add(ticket)
+            await session.commit()
+
+            return json.dumps({
+                "ticket_no": ticket_no,
+                "customer_id": customer_id,
+                "title": title,
+                "priority": priority,
+                "status": "open",
+                "message": "工单创建成功，我们会尽快处理",
+            }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"创建工单失败: {str(e)}"}, ensure_ascii=False)
 
 
 @tool
 async def ticket_lookup(customer_id: str, status: str | None = None) -> str:
-    """查询客户的技术工单列表。
+    """查询客户的工单列表。
 
     Args:
         customer_id: 客户ID
         status: 可选的状态过滤 (open/in_progress/resolved/closed)
     """
-    mock_tickets = {
-        "C001": [
-            {"ticket_id": "TK-A1B2C3D4", "title": "设备无法开机", "status": "resolved", "created": "2024-12-20"},
-            {"ticket_id": "TK-E5F6G7H8", "title": "WiFi连接不稳定", "status": "open", "created": "2025-01-10"},
-        ],
-    }
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            query = select(SupportTicket).where(SupportTicket.customer_id == customer_id)
+            if status:
+                query = query.where(SupportTicket.status == status)
+            query = query.order_by(SupportTicket.created_at.desc())
 
-    tickets = mock_tickets.get(customer_id, [])
-    if status:
-        tickets = [t for t in tickets if t["status"] == status]
+            result = await session.execute(query)
+            tickets = result.scalars().all()
 
-    if not tickets:
-        return f"客户 {customer_id} 暂无工单记录"
+            if not tickets:
+                return f"客户 {customer_id} 暂无工单记录"
 
-    import json
-    return json.dumps(tickets, ensure_ascii=False)
+            data = []
+            for t in tickets:
+                data.append({
+                    "ticket_no": t.ticket_no,
+                    "title": t.title,
+                    "category": t.category,
+                    "priority": t.priority,
+                    "status": t.status,
+                    "created_at": t.created_at.isoformat(),
+                })
+
+            return json.dumps(data, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)
 
 
 @tool
@@ -114,25 +151,36 @@ async def product_info(product_name: str | None = None) -> str:
     Args:
         product_name: 产品名称，不传则返回产品列表
     """
-    products = {
-        "智能手表Pro": {
-            "description": "高端智能手表，支持心率监测、GPS定位、NFC支付",
-            "price": 1999.00,
-            "warranty": "2年",
-        },
-        "智能手环Lite": {
-            "description": "轻量级运动手环，支持步数统计、睡眠监测",
-            "price": 299.00,
-            "warranty": "1年",
-        },
-    }
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            if product_name:
+                query = select(Product).where(
+                    Product.name.contains(product_name),
+                    Product.is_active == True,
+                )
+                result = await session.execute(query)
+                products = result.scalars().all()
+            else:
+                query = select(Product).where(Product.is_active == True)
+                result = await session.execute(query)
+                products = result.scalars().all()
 
-    if product_name:
-        info = products.get(product_name)
-        if info:
-            import json
-            return json.dumps({product_name: info}, ensure_ascii=False)
-        return f"未找到产品: {product_name}"
+            if not products:
+                return f"未找到产品: {product_name}" if product_name else "暂无产品信息"
 
-    import json
-    return json.dumps(list(products.keys()), ensure_ascii=False)
+            data = []
+            for p in products:
+                data.append({
+                    "sku": p.sku,
+                    "name": p.name,
+                    "description": p.description,
+                    "category": p.category,
+                    "price": float(p.price),
+                    "stock": p.stock,
+                    "warranty_months": p.warranty_months,
+                })
+
+            return json.dumps(data, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)

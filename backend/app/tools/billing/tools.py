@@ -1,86 +1,137 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
+
 from langchain_core.tools import tool
+from sqlalchemy import select
+
+from backend.app.core.database import get_session_factory
+from backend.app.models.db.ecommerce import Invoice, Order, Payment
 
 
 @tool
-async def invoice_lookup(customer_id: str, month: str | None = None) -> str:
-    """查询客户的发票信息。如果指定了月份，返回该月的发票；否则返回最近的发票。
+async def invoice_lookup(customer_id: str, status: str | None = None) -> str:
+    """查询客户的发票/账单列表。
 
     Args:
         customer_id: 客户ID
-        month: 查询月份，格式 YYYY-MM，不传则返回最近发票
+        status: 可选的状态过滤 (pending/paid/overdue)
     """
-    mock_invoices = {
-        "C001": [
-            {"month": "2025-01", "amount": 299.00, "status": "paid", "items": "基础套餐"},
-            {"month": "2024-12", "amount": 299.00, "status": "paid", "items": "基础套餐"},
-        ],
-        "C002": [
-            {"month": "2025-01", "amount": 599.00, "status": "unpaid", "items": "高级套餐"},
-        ],
-    }
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            query = select(Invoice).where(Invoice.customer_id == customer_id)
+            if status:
+                query = query.where(Invoice.status == status)
+            query = query.order_by(Invoice.created_at.desc())
 
-    invoices = mock_invoices.get(customer_id, [])
-    if month:
-        invoices = [i for i in invoices if i["month"] == month]
+            result = await session.execute(query)
+            invoices = result.scalars().all()
 
-    if not invoices:
-        return f"未找到客户 {customer_id} 的发票信息"
+            if not invoices:
+                return f"客户 {customer_id} 暂无账单记录"
 
-    import json
-    return json.dumps(invoices, ensure_ascii=False)
+            data = []
+            for inv in invoices:
+                data.append({
+                    "invoice_no": inv.invoice_no,
+                    "amount": float(inv.amount),
+                    "status": inv.status,
+                    "due_date": inv.due_date.isoformat() if inv.due_date else None,
+                    "paid_at": inv.paid_at.isoformat() if inv.paid_at else None,
+                })
+
+            return json.dumps(data, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)
 
 
 @tool
-async def payment_history(customer_id: str, limit: int = 5) -> str:
+async def payment_history(customer_id: str, limit: int = 10) -> str:
     """查询客户的支付历史记录。
 
     Args:
         customer_id: 客户ID
-        limit: 返回记录数量，默认5条
+        limit: 返回记录数量，默认10
     """
-    mock_history = {
-        "C001": [
-            {"date": "2025-01-05", "amount": 299.00, "method": "支付宝", "status": "成功"},
-            {"date": "2024-12-03", "amount": 299.00, "method": "微信支付", "status": "成功"},
-        ],
-        "C002": [],
-    }
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            query = (
+                select(Payment)
+                .where(Payment.customer_id == customer_id)
+                .order_by(Payment.created_at.desc())
+                .limit(limit)
+            )
 
-    history = mock_history.get(customer_id, [])
-    if not history:
-        return f"客户 {customer_id} 暂无支付记录"
+            result = await session.execute(query)
+            payments = result.scalars().all()
 
-    import json
-    return json.dumps(history[:limit], ensure_ascii=False)
+            if not payments:
+                return f"客户 {customer_id} 暂无支付记录"
+
+            data = []
+            for pay in payments:
+                data.append({
+                    "payment_no": pay.payment_no,
+                    "order_id": pay.order_id,
+                    "amount": float(pay.amount),
+                    "method": pay.method,
+                    "status": pay.status,
+                    "created_at": pay.created_at.isoformat(),
+                })
+
+            return json.dumps(data, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)
 
 
 @tool
 async def billing_summary(customer_id: str) -> str:
-    """生成客户账单摘要，包括当前欠费、已付金额等。
+    """获取客户的账单汇总信息。
 
     Args:
         customer_id: 客户ID
     """
-    mock_summaries = {
-        "C001": {
-            "current_balance": 0.00,
-            "total_paid": 3588.00,
-            "plan": "基础套餐",
-            "next_billing_date": "2025-02-01",
-        },
-        "C002": {
-            "current_balance": 599.00,
-            "total_paid": 0.00,
-            "plan": "高级套餐",
-            "next_billing_date": "2025-02-01",
-        },
-    }
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            # 查询所有发票
+            result = await session.execute(
+                select(Invoice).where(Invoice.customer_id == customer_id)
+            )
+            invoices = result.scalars().all()
 
-    summary = mock_summaries.get(customer_id)
-    if not summary:
-        return f"未找到客户 {customer_id} 的账单摘要"
+            total_amount = sum(float(inv.amount) for inv in invoices)
+            paid_amount = sum(float(inv.amount) for inv in invoices if inv.status == "paid")
+            pending_amount = sum(float(inv.amount) for inv in invoices if inv.status == "pending")
 
-    import json
-    return json.dumps(summary, ensure_ascii=False)
+            # 查询最近订单
+            order_result = await session.execute(
+                select(Order)
+                .where(Order.customer_id == customer_id)
+                .order_by(Order.created_at.desc())
+                .limit(5)
+            )
+            recent_orders = order_result.scalars().all()
+
+            summary = {
+                "customer_id": customer_id,
+                "total_invoices": len(invoices),
+                "total_amount": total_amount,
+                "paid_amount": paid_amount,
+                "pending_amount": pending_amount,
+                "recent_orders": [
+                    {
+                        "order_no": o.order_no,
+                        "amount": float(o.total_amount),
+                        "status": o.status,
+                    }
+                    for o in recent_orders
+                ],
+            }
+
+            return json.dumps(summary, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)

@@ -1,89 +1,129 @@
 from __future__ import annotations
 
+import json
+
 from langchain_core.tools import tool
+from sqlalchemy import select
+
+from backend.app.core.database import get_session_factory
+from backend.app.models.db.ecommerce import Customer, KnowledgeArticle
 
 
 @tool
 async def faq_search(query: str, top_k: int = 3) -> str:
-    """搜索常见问题FAQ。
+    """搜索常见问题解答。
 
     Args:
         query: 搜索问题
-        top_k: 返回结果数量
+        top_k: 返回结果数量，默认3
     """
-    faqs = [
-        {
-            "question": "如何重置密码？",
-            "answer": "在登录页面点击'忘记密码'，输入注册邮箱，系统会发送重置链接。",
-            "category": "账户",
-        },
-        {
-            "question": "如何联系客服？",
-            "answer": "您可以通过在线聊天、电话(400-xxx-xxxx)或邮件(support@example.com)联系我们。",
-            "category": "通用",
-        },
-        {
-            "question": "退换货政策是什么？",
-            "answer": "自收到商品起30天内，商品未使用且包装完好的情况下可申请无理由退换货。",
-            "category": "售后",
-        },
-        {
-            "question": "如何查看订单物流？",
-            "answer": "登录账户后，在'我的订单'页面可查看所有订单的物流状态。",
-            "category": "订单",
-        },
-        {
-            "question": "会员权益有哪些？",
-            "answer": "会员享受积分累计、专属折扣、生日礼品、优先客服等权益。",
-            "category": "会员",
-        },
-    ]
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            query_obj = select(KnowledgeArticle).where(
+                KnowledgeArticle.is_published == True,
+                KnowledgeArticle.category == "general",
+            )
+            result = await session.execute(query_obj)
+            articles = result.scalars().all()
 
-    results = []
-    query_lower = query.lower()
-    for faq in faqs:
-        if (query_lower in faq["question"].lower()
-                or query_lower in faq["answer"].lower()
-                or query_lower in faq["category"].lower()):
-            results.append(faq)
+            # 关键词匹配
+            scored = []
+            for article in articles:
+                score = 0
+                query_lower = query.lower()
+                if query_lower in article.title.lower():
+                    score += 3
+                if query_lower in article.content.lower():
+                    score += 2
+                if score > 0:
+                    scored.append((score, article))
 
-    if not results:
-        results = faqs[:top_k]
+            scored.sort(key=lambda x: x[0], reverse=True)
 
-    import json
-    return json.dumps(results[:top_k], ensure_ascii=False)
+            if not scored:
+                return json.dumps(
+                    [{"question": "未找到相关FAQ", "answer": "请尝试其他关键词或联系人工客服"}],
+                    ensure_ascii=False,
+                )
+
+            results = []
+            for _, article in scored[:top_k]:
+                results.append({
+                    "question": article.title,
+                    "answer": article.content,
+                    "category": article.category,
+                })
+
+            return json.dumps(results, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"搜索失败: {str(e)}"}, ensure_ascii=False)
 
 
 @tool
 async def company_info(info_type: str = "general") -> str:
-    """查询公司基本信息。
+    """查询公司信息。
 
     Args:
-        info_type: 信息类型 (general/contact/business_hours/address)
+        info_type: 信息类型 (general/contact/warranty/return_policy)
     """
     info = {
         "general": {
-            "name": "SmartCS科技有限公司",
-            "description": "专注于智能硬件和AI客服解决方案的科技公司",
+            "name": "智能科技商城",
+            "description": "专注于智能穿戴设备和配件的电商平台",
             "founded": "2020年",
+            "headquarters": "深圳市南山区",
         },
         "contact": {
-            "phone": "400-xxx-xxxx",
-            "email": "support@example.com",
-            "wechat": "SmartCS_official",
+            "phone": "400-888-9999",
+            "email": "service@smarttech.com",
+            "address": "深圳市南山区科技园路1号智能大厦",
+            "working_hours": "周一至周日 9:00-21:00",
         },
-        "business_hours": {
-            "weekdays": "09:00 - 18:00",
-            "weekends": "10:00 - 16:00",
-            "holidays": "休息",
+        "warranty": {
+            "手表类": "24个月保修",
+            "耳机类": "12个月保修",
+            "配件类": "6个月保修",
+            "说明": "保修范围包括非人为损坏的质量问题",
         },
-        "address": {
-            "city": "北京市",
-            "district": "海淀区",
-            "detail": "中关村科技园xxx号",
+        "return_policy": {
+            "未拆封": "7天内无理由退款",
+            "已拆封": "15天内因质量问题可退款",
+            "审核时间": "1-3个工作日",
+            "到账时间": "审核通过后3-5个工作日",
         },
     }
 
-    result = info.get(info_type, info["general"])
-    import json
-    return json.dumps(result, ensure_ascii=False)
+    data = info.get(info_type, info["general"])
+    return json.dumps(data, ensure_ascii=False)
+
+
+@tool
+async def customer_info(customer_id: str) -> str:
+    """查询客户基本信息。
+
+    Args:
+        customer_id: 客户ID
+    """
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            result = await session.execute(
+                select(Customer).where(Customer.id == customer_id)
+            )
+            customer = result.scalar_one_or_none()
+
+            if not customer:
+                return json.dumps({"error": f"未找到客户: {customer_id}"}, ensure_ascii=False)
+
+            return json.dumps({
+                "id": customer.id,
+                "name": customer.name,
+                "email": customer.email,
+                "phone": customer.phone,
+                "address": customer.address,
+                "vip_level": customer.vip_level,
+                "created_at": customer.created_at.isoformat(),
+            }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)
