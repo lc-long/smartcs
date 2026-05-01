@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import re
+
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 
@@ -9,31 +12,30 @@ from backend.app.services.llm.provider import LLMProvider
 
 logger = structlog.get_logger()
 
-SYSTEM_PROMPT = """你是一个智能客服意图分类器。分析用户消息，判断意图类别。
+SYSTEM_PROMPT = """你是一个意图分类器。分析用户消息，输出JSON格式的分类结果。
 
-意图类别（必须使用以下英文值）：
-- billing: 账单相关（发票、支付历史、账单金额）
-- technical: 技术支持（产品故障、使用问题）
-- refund: 退款相关（退款申请、退款进度）
-- escalation: 用户明确要求人工客服
-- general: 其他无法分类的问题
+意图类别：
+- billing: 账单、发票、支付、扣费
+- technical: 技术、故障、设备、问题、bug
+- refund: 退款、退货、退钱
+- escalation: 人工、转人工
+- general: 其他
 
-规则：
-- 用户说"人工"、"转人工"直接归为 escalation
-- 无法确定时归为 general
-- intent字段必须是上面的英文值之一
-
-请直接输出JSON，不要输出其他内容：
+输出格式（仅输出JSON，不要其他内容）：
 {"intent": "billing", "confidence": 0.9, "reasoning": "理由"}"""
+
+INTENT_KEYWORDS = {
+    IntentType.ESCALATION: ["人工", "转人工", "找人工", "真人"],
+    IntentType.BILLING: ["账单", "发票", "扣费", "付款", "充值", "缴费", "欠费"],
+    IntentType.REFUND: ["退款", "退货", "退钱", "退费", "退订"],
+    IntentType.TECHNICAL: ["故障", "设备", "技术", "坏了", "不开机", "无法", "bug", "报错"],
+}
 
 INTENT_MAPPING = {
     "billing": IntentType.BILLING,
     "账单": IntentType.BILLING,
-    "发票": IntentType.BILLING,
-    "支付": IntentType.BILLING,
     "technical": IntentType.TECHNICAL,
     "技术": IntentType.TECHNICAL,
-    "故障": IntentType.TECHNICAL,
     "refund": IntentType.REFUND,
     "退款": IntentType.REFUND,
     "escalation": IntentType.ESCALATION,
@@ -59,19 +61,33 @@ class RouterAgent(BaseAgent):
     async def classify_intent(self, messages: list[BaseMessage]) -> RouteDecision:
         logger.info("router_classify_start", message_count=len(messages))
 
-        prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+        user_text = ""
+        for msg in messages:
+            if hasattr(msg, "content"):
+                user_text += str(msg.content) + " "
 
-        response: AIMessage = await self.llm.ainvoke(prompt_messages)
-        content = response.content if isinstance(response.content, str) else str(response.content)
+        logger.info("router_user_text", text=user_text[:200])
+
+        keyword_result = self._classify_by_keywords(user_text)
+        if keyword_result and keyword_result.confidence >= 0.8:
+            logger.info(
+                "router_keyword_match",
+                intent=keyword_result.intent.value,
+                confidence=keyword_result.confidence,
+            )
+            return keyword_result
 
         try:
-            decision = self._parse_response(content)
-        except (ValueError, KeyError):
-            logger.warning("router_parse_failed", raw_content=content[:200])
-            decision = RouteDecision(
+            prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+            response: AIMessage = await self.llm.ainvoke(prompt_messages)
+            content = response.content if isinstance(response.content, str) else str(response.content)
+            decision = self._parse_response(content, user_text)
+        except Exception as e:
+            logger.warning("router_llm_failed", error=str(e))
+            decision = keyword_result or RouteDecision(
                 intent=IntentType.GENERAL,
                 confidence=0.3,
-                reasoning="无法解析分类结果，降级到通用处理",
+                reasoning="分类失败，降级到通用处理",
                 suggested_agent="general",
             )
 
@@ -82,9 +98,20 @@ class RouterAgent(BaseAgent):
         )
         return decision
 
-    def _parse_response(self, content: str) -> RouteDecision:
-        import json
+    def _classify_by_keywords(self, text: str) -> RouteDecision | None:
+        text_lower = text.lower()
+        for intent, keywords in INTENT_KEYWORDS.items():
+            for kw in keywords:
+                if kw in text_lower:
+                    return RouteDecision(
+                        intent=intent,
+                        confidence=0.9,
+                        reasoning=f"关键词匹配: {kw}",
+                        suggested_agent=self.get_agent_for_intent(intent),
+                    )
+        return None
 
+    def _parse_response(self, content: str, user_text: str = "") -> RouteDecision:
         content = content.strip()
 
         first_brace = content.find("{")

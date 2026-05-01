@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import structlog
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -103,6 +105,7 @@ class CustomerServiceWorkflow:
 
     async def _router_node(self, state: CustomerServiceState) -> dict:
         messages = state["messages"]
+        logger.info("router_node_messages", count=len(messages), types=[type(m).__name__ for m in messages])
         decision = await self.router.classify_intent(messages)
 
         return {
@@ -122,12 +125,17 @@ class CustomerServiceWorkflow:
 
         return intent
 
+    @staticmethod
+    def _strip_think_tags(content: str) -> str:
+        return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
     async def _run_agent(self, agent, state: CustomerServiceState, agent_name: str) -> dict:
         logger.info("agent_node_start", agent=agent_name)
         try:
             messages = state["messages"]
             response = await agent.run(messages)
             content = response.content if isinstance(response.content, str) else str(response.content)
+            content = self._strip_think_tags(content)
 
             tools_called = []
             if hasattr(response, "tool_calls") and response.tool_calls:

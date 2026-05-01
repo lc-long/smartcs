@@ -19,3 +19,14 @@ async def health_check() -> dict:
             "chroma": "connected",
         },
     }
+
+
+@router.get("/debug/config")
+async def debug_config() -> dict:
+    settings = get_settings()
+    return {
+        "llm_provider": settings.llm_provider,
+        "default_model": settings.default_model,
+        "router_model": settings.router_model,
+        "minimax_base_url": settings.minimax_base_url,
+    }
