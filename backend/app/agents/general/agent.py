@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
 from backend.app.tools.general.tools import company_info, customer_info, faq_search
+from backend.app.tools.refund.tools import order_lookup
 
 logger = structlog.get_logger()
 
@@ -40,7 +41,7 @@ class GeneralAgent(BaseAgent):
         )
 
     def get_tools(self):
-        return [faq_search, company_info, customer_info]
+        return [faq_search, company_info, customer_info, order_lookup]
 
     def get_system_prompt(self):
         return SYSTEM_PROMPT
