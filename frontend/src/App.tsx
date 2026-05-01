@@ -83,7 +83,7 @@ function AppLayout() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <nav className="w-20 bg-white border-r flex flex-col items-center py-4 gap-1 overflow-y-auto flex-shrink-0">
+      <nav className="w-24 bg-white border-r flex flex-col items-center py-4 gap-1 overflow-y-auto flex-shrink-0">
         <div className="mb-4 flex-shrink-0">
           <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">
             S
@@ -109,7 +109,7 @@ function AppLayout() {
                 title={item.label}
               >
                 <span className="text-xl mb-0.5">{item.icon}</span>
-                <span className="truncate max-w-[60px]">{item.label}</span>
+                <span className="truncate max-w-[72px]">{item.label}</span>
               </Link>
             ))}
           </div>
