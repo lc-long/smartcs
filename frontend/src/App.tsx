@@ -1,15 +1,21 @@
 import { Routes, Route, Link, useLocation } from "react-router-dom";
 import ChatPage from "./pages/ChatPage";
 import AdminPage from "./pages/AdminPage";
-import DashboardPage from "./pages/DashboardPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { ProductsPage } from "./pages/ProductsPage";
+import { OrdersPage } from "./pages/OrdersPage";
+import { CustomersPage } from "./pages/CustomersPage";
 
 export default function App() {
   const location = useLocation();
 
   const navItems = [
     { path: "/", label: "对话", icon: "💬" },
-    { path: "/admin", label: "管理", icon: "⚙️" },
     { path: "/dashboard", label: "看板", icon: "📊" },
+    { path: "/products", label: "商品", icon: "🛍️" },
+    { path: "/orders", label: "订单", icon: "📦" },
+    { path: "/customers", label: "客户", icon: "👥" },
+    { path: "/admin", label: "管理", icon: "⚙️" },
   ];
 
   return (
@@ -31,11 +37,14 @@ export default function App() {
         ))}
       </nav>
 
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-auto">
         <Routes>
           <Route path="/" element={<ChatPage />} />
-          <Route path="/admin" element={<AdminPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/products" element={<ProductsPage />} />
+          <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </main>
     </div>
