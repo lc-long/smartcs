@@ -11,10 +11,13 @@ from backend.app.agents.refund.agent import RefundAgent
 from backend.app.agents.router.agent import RouterAgent
 from backend.app.agents.technical.agent import TechnicalAgent
 from backend.app.models.schemas import IntentType
+from backend.app.services.approval_queue import ApprovalItem, get_approval_queue
 from backend.app.services.llm.provider import LLMProvider, get_llm_provider
 from backend.app.workflows.state import CustomerServiceState
 
 logger = structlog.get_logger()
+
+HIGH_RISK_TOOLS = {"process_refund"}
 
 
 class CustomerServiceWorkflow:
@@ -39,6 +42,7 @@ class CustomerServiceWorkflow:
         graph.add_node("refund", self._refund_node)
         graph.add_node("general", self._general_node)
         graph.add_node("escalation", self._escalation_node)
+        graph.add_node("hitl_check", self._hitl_check_node)
         graph.add_node("response", self._response_node)
 
         graph.add_edge(START, "router")
@@ -55,9 +59,17 @@ class CustomerServiceWorkflow:
         )
         graph.add_edge("billing", "response")
         graph.add_edge("technical", "response")
-        graph.add_edge("refund", "response")
+        graph.add_edge("refund", "hitl_check")
         graph.add_edge("general", "response")
         graph.add_edge("escalation", "response")
+        graph.add_conditional_edges(
+            "hitl_check",
+            self._hitl_decision,
+            {
+                "needs_approval": "response",
+                "no_approval": "response",
+            },
+        )
         graph.add_edge("response", END)
 
         self._graph = graph.compile()
@@ -152,6 +164,44 @@ class CustomerServiceWorkflow:
             "active_agent": "escalation",
             "needs_human": True,
         }
+
+    async def _hitl_check_node(self, state: CustomerServiceState) -> dict:
+        tools_called = state.get("tools_called", [])
+        has_high_risk = any(t in HIGH_RISK_TOOLS for t in tools_called)
+
+        if not has_high_risk:
+            return {}
+
+        queue = get_approval_queue()
+        approval = ApprovalItem(
+            conversation_id=state["conversation_id"],
+            approval_type="refund_approval",
+            customer_id=state["customer_id"],
+            agent_name=state["active_agent"],
+            action_description=state["agent_response"],
+            action_params={"tools_called": tools_called},
+            risk_level="high",
+        )
+        queue.add(approval)
+
+        logger.info(
+            "hitl_approval_created",
+            approval_id=str(approval.id),
+            conversation_id=state["conversation_id"],
+        )
+
+        return {
+            "needs_human": True,
+            "agent_response": (
+                f"{state['agent_response']}\n\n"
+                f"[系统] 此操作需要人工审批，审批ID: {approval.id}"
+            ),
+        }
+
+    def _hitl_decision(self, state: CustomerServiceState) -> str:
+        if state.get("needs_human"):
+            return "needs_approval"
+        return "no_approval"
 
     async def _response_node(self, state: CustomerServiceState) -> dict:
         logger.info(
