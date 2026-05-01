@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
+from backend.app.tools.advanced.tools import product_review_lookup
 from backend.app.tools.technical.tools import (
     knowledge_search,
     product_info,
@@ -51,7 +52,7 @@ class TechnicalAgent(BaseAgent):
         )
 
     def get_tools(self):
-        return [knowledge_search, ticket_create, ticket_lookup, product_info]
+        return [knowledge_search, ticket_create, ticket_lookup, product_info, product_review_lookup]
 
     def get_system_prompt(self):
         return SYSTEM_PROMPT
