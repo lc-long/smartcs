@@ -1,12 +1,20 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, user } = useAuth();
+  const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // 如果已登录，跳转到首页
+  if (user) {
+    navigate("/", { replace: true });
+    return null;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -15,6 +23,7 @@ export function LoginPage() {
 
     try {
       await login(username, password);
+      navigate("/", { replace: true });
     } catch (err: any) {
       setError(err.message || "登录失败");
     } finally {
