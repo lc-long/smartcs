@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import time
 from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 
 from backend.app.models.schemas import (
@@ -72,3 +74,83 @@ async def chat(request: ChatRequest) -> ChatResponse:
         message=response_message,
         metadata=metadata,
     )
+
+
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest) -> StreamingResponse:
+    conversation_id = request.conversation_id or uuid4()
+
+    async def event_generator():
+        start_time = time.time()
+
+        yield _sse_event(
+            "start",
+            {
+                "conversation_id": str(conversation_id),
+                "customer_id": request.customer_id,
+            },
+        )
+
+        messages = [HumanMessage(content=request.message)]
+        workflow = get_workflow()
+
+        try:
+            yield _sse_event("processing", {"status": "routing"})
+
+            result = await workflow.run(
+                messages=messages,
+                conversation_id=str(conversation_id),
+                customer_id=request.customer_id,
+            )
+
+            yield _sse_event(
+                "routing",
+                {
+                    "intent": result["current_intent"],
+                    "confidence": result["routing_confidence"],
+                    "reasoning": result["routing_reasoning"],
+                    "agent": result["active_agent"],
+                },
+            )
+
+            yield _sse_event("processing", {"status": "generating"})
+
+            response_text = result["agent_response"]
+            chunk_size = 20
+            for i in range(0, len(response_text), chunk_size):
+                chunk = response_text[i : i + chunk_size]
+                yield _sse_event("chunk", {"content": chunk})
+
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            yield _sse_event(
+                "complete",
+                {
+                    "conversation_id": str(conversation_id),
+                    "agent": result["active_agent"],
+                    "intent": result["current_intent"],
+                    "tools_called": result["tools_called"],
+                    "latency_ms": latency_ms,
+                },
+            )
+
+        except Exception as e:
+            logger.exception("chat_stream_error")
+            yield _sse_event(
+                "error",
+                {"message": "处理请求时出现错误，请稍后重试"},
+            )
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _sse_event(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
