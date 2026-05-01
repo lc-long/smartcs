@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from typing import Literal
-
 import structlog
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from backend.app.agents.billing.agent import BillingAgent
+from backend.app.agents.general.agent import GeneralAgent
+from backend.app.agents.refund.agent import RefundAgent
 from backend.app.agents.router.agent import RouterAgent
+from backend.app.agents.technical.agent import TechnicalAgent
 from backend.app.models.schemas import IntentType
 from backend.app.services.llm.provider import LLMProvider, get_llm_provider
 from backend.app.workflows.state import CustomerServiceState
@@ -19,6 +21,10 @@ class CustomerServiceWorkflow:
     def __init__(self, llm_provider: LLMProvider | None = None):
         self.llm_provider = llm_provider or get_llm_provider()
         self.router = RouterAgent(self.llm_provider)
+        self.billing = BillingAgent(self.llm_provider)
+        self.technical = TechnicalAgent(self.llm_provider)
+        self.refund = RefundAgent(self.llm_provider)
+        self.general = GeneralAgent(self.llm_provider)
         self._graph: CompiledStateGraph | None = None
 
     def build_graph(self) -> CompiledStateGraph:
@@ -104,37 +110,40 @@ class CustomerServiceWorkflow:
 
         return intent
 
+    async def _run_agent(self, agent, state: CustomerServiceState, agent_name: str) -> dict:
+        logger.info("agent_node_start", agent=agent_name)
+        try:
+            messages = state["messages"]
+            response = await agent.run(messages)
+            content = response.content if isinstance(response.content, str) else str(response.content)
+
+            tools_called = []
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                tools_called = [tc["name"] for tc in response.tool_calls]
+
+            return {
+                "agent_response": content,
+                "active_agent": agent_name,
+                "tools_called": tools_called,
+            }
+        except Exception:
+            logger.exception("agent_node_error", agent=agent_name)
+            return {
+                "agent_response": "抱歉，处理您的请求时出现了问题，请稍后重试或转接人工客服。",
+                "active_agent": agent_name,
+            }
+
     async def _billing_node(self, state: CustomerServiceState) -> dict:
-        logger.info("agent_node", agent="billing")
-        model_name = self.llm_provider.get_model_for_agent("billing")
-        llm = self.llm_provider.get_llm(model_name=model_name)
-        response = await llm.ainvoke(state["messages"])
-        content = response.content if isinstance(response.content, str) else str(response.content)
-        return {"agent_response": content, "active_agent": "billing"}
+        return await self._run_agent(self.billing, state, "billing")
 
     async def _technical_node(self, state: CustomerServiceState) -> dict:
-        logger.info("agent_node", agent="technical")
-        model_name = self.llm_provider.get_model_for_agent("technical")
-        llm = self.llm_provider.get_llm(model_name=model_name)
-        response = await llm.ainvoke(state["messages"])
-        content = response.content if isinstance(response.content, str) else str(response.content)
-        return {"agent_response": content, "active_agent": "technical"}
+        return await self._run_agent(self.technical, state, "technical")
 
     async def _refund_node(self, state: CustomerServiceState) -> dict:
-        logger.info("agent_node", agent="refund")
-        model_name = self.llm_provider.get_model_for_agent("refund")
-        llm = self.llm_provider.get_llm(model_name=model_name)
-        response = await llm.ainvoke(state["messages"])
-        content = response.content if isinstance(response.content, str) else str(response.content)
-        return {"agent_response": content, "active_agent": "refund"}
+        return await self._run_agent(self.refund, state, "refund")
 
     async def _general_node(self, state: CustomerServiceState) -> dict:
-        logger.info("agent_node", agent="general")
-        model_name = self.llm_provider.get_model_for_agent("general")
-        llm = self.llm_provider.get_llm(model_name=model_name)
-        response = await llm.ainvoke(state["messages"])
-        content = response.content if isinstance(response.content, str) else str(response.content)
-        return {"agent_response": content, "active_agent": "general"}
+        return await self._run_agent(self.general, state, "general")
 
     async def _escalation_node(self, state: CustomerServiceState) -> dict:
         logger.info("agent_node", agent="escalation")
@@ -149,6 +158,7 @@ class CustomerServiceWorkflow:
             "workflow_complete",
             agent=state["active_agent"],
             intent=state["current_intent"],
+            needs_human=state["needs_human"],
         )
         return {}
 
