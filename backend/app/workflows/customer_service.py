@@ -138,8 +138,14 @@ class CustomerServiceWorkflow:
         intent = state["current_intent"]
         confidence = state["routing_confidence"]
 
-        if confidence < 0.5 or intent == "escalation":
+        # 只有明确要求人工时才升级
+        if intent == "escalation":
             return "escalation"
+
+        # 低置信度时默认路由到通用Agent
+        if confidence < 0.3:
+            return "general"
+
         return intent
 
     async def _execute_node(self, state: CustomerServiceState) -> dict:
@@ -225,13 +231,31 @@ class CustomerServiceWorkflow:
         agent = state["active_agent"]
         intent = state["current_intent"]
 
-        # 如果是升级请求
+        # 如果是升级请求，检查是否真的需要人工
         if intent == "escalation":
-            return {
-                "agent_response": "您的问题需要人工客服处理，正在为您转接，请稍候...",
-                "active_agent": "escalation",
-                "needs_human": True,
-            }
+            # 检查用户是否明确要求人工
+            messages = state["messages"]
+            user_text = " ".join(
+                m.content if hasattr(m, "content") else str(m)
+                for m in messages
+            )
+            
+            # 只有用户明确说"转人工"等关键词时才升级
+            escalation_keywords = ["转人工", "找人工", "真人客服", "人工服务", "转接人工"]
+            needs_human = any(kw in user_text for kw in escalation_keywords)
+            
+            if needs_human:
+                return {
+                    "agent_response": "您的问题需要人工客服处理，正在为您转接，请稍候...",
+                    "active_agent": "escalation",
+                    "needs_human": True,
+                }
+            else:
+                # 不是明确要求人工，路由到通用Agent
+                return {
+                    "active_agent": "general",
+                    "current_intent": "general",
+                }
 
         logger.info(
             "workflow_complete",
