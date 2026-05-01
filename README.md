@@ -60,19 +60,36 @@ User Request
 │   │   │   └── customer_service.py  # Workflow orchestration
 │   │   ├── services/
 │   │   │   ├── llm/          # Multi-provider LLM (MiniMax/OpenAI/Anthropic)
-│   │   │   ├── memory/       # In-memory short-term store
+│   │   │   ├── memory/       # Redis/In-memory short-term store
+│   │   │   ├── redis/        # Redis client and session management
+│   │   │   ├── knowledge/    # Chroma vector DB for knowledge base
 │   │   │   ├── observability/ # Trace context
 │   │   │   ├── orchestrator.py
 │   │   │   └── approval_queue.py
+│   │   ├── repositories/     # Database repositories
+│   │   │   ├── base.py       # BaseRepository with CRUD
+│   │   │   ├── conversation.py # Conversation & Message repos
+│   │   │   └── approval.py   # Approval repository
 │   │   ├── api/
 │   │   │   ├── v1/           # REST endpoints
+│   │   │   │   ├── auth.py   # JWT authentication
+│   │   │   │   ├── chat.py   # Chat with SSE streaming
+│   │   │   │   ├── admin.py  # Approval management
+│   │   │   │   ├── health.py # Health & debug endpoints
+│   │   │   │   └── traces.py # Trace API
 │   │   │   └── websocket/    # WebSocket real-time chat
-│   │   ├── core/config/      # Pydantic Settings
-│   │   ├── models/           # Pydantic schemas
+│   │   ├── core/
+│   │   │   ├── config/       # Pydantic Settings
+│   │   │   ├── database.py   # SQLAlchemy async engine
+│   │   │   └── security/     # JWT token handling
+│   │   ├── models/
+│   │   │   ├── schemas/      # Pydantic models
+│   │   │   └── db/           # SQLAlchemy ORM models
 │   │   └── main.py           # FastAPI app entry
 │   ├── tests/
-│   │   └── unit/             # 28 unit tests
-│   ├── alembic/              # DB migrations (TODO)
+│   │   ├── unit/             # 28 unit tests
+│   │   └── integration/      # Integration tests
+│   ├── alembic/              # DB migrations
 │   └── scripts/              # Dev & debug scripts
 ├── frontend/
 │   ├── src/
@@ -82,7 +99,9 @@ User Request
 │   │   ├── store/            # Zustand state management
 │   │   └── services/         # REST API client
 │   ├── package.json
-│   └── vite.config.ts
+│   ├── vite.config.ts
+│   ├── Dockerfile            # Frontend container
+│   └── nginx.conf            # Nginx configuration
 ├── docs/                     # Project documentation (Chinese)
 │   ├── architecture.md       # System architecture
 │   ├── requirements.md       # 21 FRs + 7 NFRs
@@ -90,7 +109,9 @@ User Request
 │   ├── deployment.md         # Deployment guide
 │   ├── development.md        # Dev standards
 │   └── CHANGELOG.md          # Version history
-├── docker-compose.yml        # Redis + PostgreSQL
+├── Dockerfile                # Backend container
+├── docker-compose.yml        # Full stack deployment
+├── alembic.ini               # Alembic configuration
 └── .env                      # Environment config
 ```
 
@@ -110,13 +131,32 @@ User Request
 
 ### Real-time Communication
 - WebSocket-based bidirectional chat
+- SSE streaming responses for better UX
 - Auto-reconnect with exponential backoff
 - Event streaming (typing, agent selection, tool calls)
+
+### Data Persistence
+- PostgreSQL for conversations, messages, and approvals
+- Redis for session management and caching
+- Chroma vector DB for knowledge base semantic search
+- SQLAlchemy async ORM with repository pattern
+
+### Authentication & Security
+- JWT-based authentication
+- User registration and login
+- Role-based access control (admin, agent, viewer)
+- Password hashing with bcrypt
 
 ### Observability
 - In-memory trace context with span tracking
 - Trace API endpoint for debugging
 - Per-request conversation tracing
+
+### Deployment
+- Docker containers for backend and frontend
+- Docker Compose for full stack deployment
+- Nginx reverse proxy for frontend
+- Health checks and service dependencies
 
 ## Quick Start
 
@@ -194,8 +234,15 @@ docker-compose up -d
 
 ## API Endpoints
 
+### Authentication
+- `POST /api/v1/auth/register` - Register new user
+- `POST /api/v1/auth/login` - Login (OAuth2 password flow)
+- `POST /api/v1/auth/refresh` - Refresh access token
+- `GET /api/v1/auth/me` - Get current user info
+
 ### Chat
 - `POST /api/v1/chat` - Send message (REST)
+- `POST /api/v1/chat/stream` - Send message (SSE streaming)
 - `WS /ws/chat/{conversation_id}` - Real-time chat (WebSocket)
 
 ### Admin
@@ -208,6 +255,43 @@ docker-compose up -d
 - `GET /api/v1/health` - Health check
 - `GET /api/v1/debug/config` - Current configuration
 - `GET /api/v1/traces/{trace_id}` - Request trace
+
+## Docker Deployment
+
+### Full Stack Deployment
+
+```bash
+# Set your MiniMax API key
+export MINIMAX_API_KEY=your_api_key_here
+
+# Build and start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
+```
+
+### Services
+- **Frontend**: http://localhost:80
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+- **PostgreSQL**: localhost:5432
+- **Redis**: localhost:6379
+
+### Individual Container Build
+
+```bash
+# Backend only
+docker build -t smartcs-backend .
+docker run -p 8000:8000 smartcs-backend
+
+# Frontend only
+docker build -t smartcs-frontend -f frontend/Dockerfile .
+docker run -p 80:80 smartcs-frontend
+```
 
 ## Testing
 
@@ -230,24 +314,25 @@ pytest backend/tests/ --cov=backend/app --cov-report=html
 - [x] 4 specialist agents with 13 tools
 - [x] HITL approval queue
 - [x] WebSocket real-time chat
+- [x] SSE streaming responses
 - [x] MiniMax LLM integration
 - [x] React frontend (Chat, Admin, Dashboard)
+- [x] PostgreSQL database integration
+- [x] Redis session and cache management
+- [x] Chroma vector DB for knowledge base
+- [x] JWT authentication system
+- [x] Docker containerization
+- [x] Integration tests
 - [x] Unit tests (28 passing)
 - [x] Project documentation (architecture, API, requirements)
 
 ### 🚧 In Progress
 - [ ] Router Agent stability (MiniMax API inconsistency debugging)
-- [ ] Database integration (PostgreSQL)
-- [ ] Redis integration (session persistence)
-- [ ] Chroma vector DB (knowledge base)
 
 ### 📋 Planned
-- [ ] Authentication & Authorization (JWT)
-- [ ] Streaming responses (SSE)
 - [ ] Rate limiting
 - [ ] PII detection & redaction
-- [ ] Integration & E2E tests
-- [ ] Docker application containers
+- [ ] E2E tests
 - [ ] CI/CD pipeline
 
 ## Tech Stack
@@ -257,9 +342,12 @@ pytest backend/tests/ --cov=backend/app --cov-report=html
 | **Backend** | Python 3.11+, FastAPI, LangGraph, LangChain |
 | **Frontend** | React 19, TypeScript, Vite 6, Tailwind CSS, Zustand |
 | **LLM** | MiniMax (OpenAI-compatible API) |
-| **Database** | PostgreSQL 15 (planned), Redis 7 (planned) |
-| **Vector DB** | Chroma (planned) |
-| **Testing** | pytest, 28 unit tests |
+| **Database** | PostgreSQL 15, SQLAlchemy async ORM |
+| **Cache** | Redis 7 |
+| **Vector DB** | Chroma |
+| **Auth** | JWT, bcrypt |
+| **Testing** | pytest, 28 unit tests, integration tests |
+| **Deployment** | Docker, Docker Compose, Nginx |
 | **Docs** | Chinese (docs/), English (README, code comments) |
 
 ## Git Convention
