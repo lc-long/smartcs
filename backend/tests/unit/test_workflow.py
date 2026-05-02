@@ -120,7 +120,8 @@ class TestRouterAgentClassification:
         mock_provider.get_llm.return_value = mock_llm
 
         router = RouterAgent(mock_provider)
-        messages = [HumanMessage(content="这个手表坏了，要退款，建个工单")]  # 无关键词匹配
+        # 使用不包含任何关键词的消息，强制走LLM分类
+        messages = [HumanMessage(content="你好")]
         result = await router.classify_intent(messages)
 
         assert result.is_multi_intent is True
