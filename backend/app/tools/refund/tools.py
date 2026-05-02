@@ -193,3 +193,59 @@ async def process_refund(order_no: str, amount: float, reason: str) -> str:
             }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"退款处理失败: {str(e)}"}, ensure_ascii=False)
+
+
+@tool
+async def refund_status_lookup(order_no: str) -> str:
+    """查询退款进度状态。
+
+    Args:
+        order_no: 订单号
+    """
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            result = await session.execute(
+                select(Order).where(Order.order_no == order_no)
+            )
+            order = result.scalar_one_or_none()
+
+            if not order:
+                return json.dumps({"error": f"未找到订单: {order_no}"}, ensure_ascii=False)
+
+            refund_result = await session.execute(
+                select(Refund).where(Refund.order_id == order.id)
+            )
+            refund = refund_result.scalar_one_or_none()
+
+            if not refund:
+                return json.dumps({
+                    "order_no": order_no,
+                    "has_refund": False,
+                    "message": "该订单暂无退款申请",
+                }, ensure_ascii=False)
+
+            return json.dumps({
+                "order_no": order_no,
+                "has_refund": True,
+                "refund_no": refund.refund_no,
+                "amount": float(refund.amount),
+                "reason": refund.reason,
+                "status": refund.status,
+                "created_at": refund.created_at.isoformat(),
+                "message": _get_refund_status_message(refund.status),
+            }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"查询退款状态失败: {str(e)}"}, ensure_ascii=False)
+
+
+def _get_refund_status_message(status: str) -> str:
+    messages = {
+        "pending": "退款申请已提交，等待审批中",
+        "approved": "退款已批准处理中",
+        "rejected": "退款申请被拒绝",
+        "processing": "退款正在处理中，预计3-5个工作日到账",
+        "completed": "退款已完成",
+        "cancelled": "退款申请已取消",
+    }
+    return messages.get(status, f"未知状态: {status}")
