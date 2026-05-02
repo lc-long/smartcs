@@ -21,30 +21,46 @@ async def knowledge_search(query: str, category: str | None = None, top_k: int =
         top_k: 返回结果数量，默认3
     """
     try:
-        from backend.app.services.knowledge.chroma import get_knowledge_base
+        from sqlalchemy import select, or_
+        from backend.app.core.database import get_session_factory
+        from backend.app.models.db.ecommerce import KnowledgeArticle
 
-        kb = get_knowledge_base()
-
-        where_filter = {"category": category} if category else None
-
-        results = kb.search(query=query, n_results=top_k, where=where_filter)
-
-        if not results:
-            return json.dumps(
-                [{"content": "未找到相关知识文档", "source": "知识库", "relevance": 0}],
-                ensure_ascii=False,
+        factory = get_session_factory()
+        async with factory() as session:
+            search_pattern = f"%{query}%"
+            stmt = select(KnowledgeArticle).where(
+                KnowledgeArticle.is_published == True,
+                or_(
+                    KnowledgeArticle.title.ilike(search_pattern),
+                    KnowledgeArticle.content.ilike(search_pattern),
+                ),
             )
+            if category:
+                stmt = stmt.where(KnowledgeArticle.category == category)
+            stmt = stmt.order_by(KnowledgeArticle.view_count.desc()).limit(top_k)
 
-        output = []
-        for r in results:
-            output.append({
-                "content": r["content"][:500],
-                "source": r["metadata"].get("title", "知识库"),
-                "relevance": r.get("score", 0),
-                "category": r["metadata"].get("category", "general"),
-            })
+            result = await session.execute(stmt)
+            articles = result.scalars().all()
 
-        return json.dumps(output, ensure_ascii=False)
+            if not articles:
+                return json.dumps(
+                    [{"content": "未找到相关知识文档", "source": "知识库", "relevance": 0}],
+                    ensure_ascii=False,
+                )
+
+            output = []
+            for article in articles:
+                title_match = query.lower() in article.title.lower()
+                content_match = query.lower() in article.content.lower()
+                relevance = 0.9 if title_match else (0.7 if content_match else 0.5)
+                output.append({
+                    "content": article.content[:500],
+                    "source": article.title,
+                    "relevance": relevance,
+                    "category": article.category,
+                })
+
+            return json.dumps(output, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"搜索失败: {str(e)}"}, ensure_ascii=False)
 
