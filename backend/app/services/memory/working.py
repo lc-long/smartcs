@@ -247,6 +247,28 @@ class WorkingMemoryStore:
             logger.warning("memory_redis_load_failed", conversation_id=conversation_id, error=str(e))
         return None
 
+    def _start_async_task(self, coro) -> None:
+        """安全地启动异步任务，处理无事件循环的情况"""
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(coro)
+            task.add_done_callback(self._handle_task_error)
+        except RuntimeError:
+            # No running event loop - schedule in background thread
+            import concurrent.futures
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            def run_coro():
+                asyncio.run(coro)
+            executor.submit(run_coro)
+            executor.shutdown(wait=False)
+
+    def _handle_task_error(self, task: asyncio.Task) -> None:
+        try:
+            if task.exc():
+                logger.warning("memory_async_task_failed", error=str(task.exc()))
+        except Exception:
+            pass
+
     def create(
         self,
         conversation_id: str,
@@ -264,7 +286,7 @@ class WorkingMemoryStore:
             self._memories[conversation_id] = memory
             self._start_cleanup_thread()
             if self._use_redis:
-                asyncio.create_task(self._persist_to_redis(memory))
+                self._start_async_task(self._persist_to_redis(memory))
             return memory
 
     def get(self, conversation_id: str) -> WorkingMemory | None:
@@ -280,14 +302,14 @@ class WorkingMemoryStore:
             memory.touch()
             self._memories[conversation_id] = memory
             if self._use_redis:
-                asyncio.create_task(self._persist_to_redis(memory))
+                self._start_async_task(self._persist_to_redis(memory))
 
     def delete(self, conversation_id: str) -> None:
         """删除工作记忆"""
         with self._lock:
             self._memories.pop(conversation_id, None)
             if self._use_redis:
-                asyncio.create_task(self._delete_from_redis(conversation_id))
+                self._start_async_task(self._delete_from_redis(conversation_id))
 
     async def _delete_from_redis(self, conversation_id: str) -> None:
         """从Redis删除"""
