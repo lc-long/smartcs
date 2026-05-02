@@ -4,8 +4,8 @@ import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.app.services.approval_queue import ApprovalItem, get_approval_queue
 from backend.app.api.websocket.chat_ws import manager
+from backend.app.services.approval_queue import get_approval_queue
 
 logger = structlog.get_logger()
 
@@ -57,10 +57,12 @@ async def decide_approval(approval_id: str, request: ApprovalDecisionRequest) ->
 
     # 如果是退款审批，需要更新Refund记录状态
     if item.approval_type == "refund_approval":
-        from backend.app.models.db.ecommerce import Refund
-        from backend.app.core.database import get_session_factory
-        from sqlalchemy import select
         from datetime import datetime
+
+        from sqlalchemy import select
+
+        from backend.app.core.database import get_session_factory
+        from backend.app.models.db.ecommerce import Refund
 
         try:
             factory = get_session_factory()
@@ -82,6 +84,11 @@ async def decide_approval(approval_id: str, request: ApprovalDecisionRequest) ->
                     logger.info("refund_status_updated", refund_no=refund.refund_no, status=refund.status)
         except Exception as e:
             logger.warning("failed_to_update_refund_status", error=str(e))
+
+    # 通知Redis等待中的workflow（如果有）
+    from backend.app.services.hitl_blocker import get_hitl_blocker
+    hitl_blocker = get_hitl_blocker()
+    hitl_blocker.notify(approval_id, request.decision)
 
     await manager.send_event(item.conversation_id, {
         "type": "approval_result",

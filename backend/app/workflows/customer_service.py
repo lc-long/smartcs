@@ -5,21 +5,26 @@ import re
 import uuid
 
 import structlog
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from backend.app.agents.billing.agent import BillingAgent
-from backend.app.agents.communication import AgentCommunicator, AgentMessage, AgentResponse, get_communicator
+from backend.app.agents.communication import (
+    AgentMessage,
+    get_communicator,
+)
 from backend.app.agents.general.agent import GeneralAgent
 from backend.app.agents.refund.agent import RefundAgent
 from backend.app.agents.router.agent import RouterAgent
-from backend.app.agents.supervisor.agent import SupervisorAgent, get_supervisor
+from backend.app.agents.supervisor.agent import get_supervisor
 from backend.app.agents.technical.agent import TechnicalAgent
-from backend.app.models.schemas import IntentType
 from backend.app.services.approval_queue import ApprovalItem, get_approval_queue
+from backend.app.services.hitl_blocker import get_hitl_blocker
 from backend.app.services.llm.provider import LLMProvider, get_llm_provider
-from backend.app.services.memory.working import WorkingMemory, WorkingMemoryStore, get_working_memory_store
+from backend.app.services.memory.working import (
+    WorkingMemory,
+    get_working_memory_store,
+)
 from backend.app.services.sentiment.analyzer import get_sentiment_analyzer
 from backend.app.workflows.state import CustomerServiceState
 
@@ -432,7 +437,7 @@ class CustomerServiceWorkflow:
 
         if working_memory:
             working_memory.add_thought(
-                f"所有子任务执行完成，准备汇总结果",
+                "所有子任务执行完成，准备汇总结果",
                 agent="supervisor",
             )
 
@@ -581,19 +586,55 @@ class CustomerServiceWorkflow:
             risk_level="high",
         )
         queue.add(approval)
+        approval_id = str(approval.id)
 
         logger.info(
             "hitl_approval_created",
-            approval_id=str(approval.id),
+            approval_id=approval_id,
             conversation_id=state["conversation_id"],
         )
 
-        return {
-            "needs_human": True,
-            "agent_response": (
+        # 发送等待审批事件
+        await self._emit_event("hitl_waiting", {
+            "approval_id": approval_id,
+            "message": "[系统] 此操作需要人工审批，审批ID: " + approval_id,
+        })
+
+        # 发布到Redis channel，让admin API可以通知
+        from backend.app.services.redis.client import get_redis
+        try:
+            redis_client = await get_redis()
+            await redis_client.publish(f"smartcs:hitl:{approval_id}", "pending")
+        except Exception as e:
+            logger.warning("hitl_redis_publish_failed", error=str(e))
+
+        # 真正阻塞等待审批（最长24小时）
+        blocker = get_hitl_blocker()
+        decision = await blocker.wait_for_approval(approval_id, timeout_seconds=86400)
+
+        if decision == "approved":
+            final_message = (
                 f"{state['agent_response']}\n\n"
-                f"[系统] 此操作需要人工审批，审批ID: {approval.id}"
-            ),
+                f"[系统] 审批已通过（审批ID: {approval_id}），退款处理中，预计3-5个工作日到账"
+            )
+            logger.info("hitl_approved", approval_id=approval_id)
+        elif decision == "rejected":
+            final_message = (
+                f"{state['agent_response']}\n\n"
+                f"[系统] 审批被拒绝（审批ID: {approval_id}），退款申请未通过"
+            )
+            logger.info("hitl_rejected", approval_id=approval_id)
+        else:
+            final_message = (
+                f"{state['agent_response']}\n\n"
+                f"[系统] 审批超时（审批ID: {approval_id}），退款申请已取消"
+            )
+            logger.info("hitl_timeout", approval_id=approval_id)
+
+        return {
+            "needs_human": decision == "approved",
+            "human_approved": decision == "approved",
+            "agent_response": final_message,
         }
 
     def _hitl_decision(self, state: CustomerServiceState) -> str:
