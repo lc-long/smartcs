@@ -4,12 +4,24 @@ from typing import Optional
 
 import chromadb
 import structlog
+from sentence_transformers import SentenceTransformer
 
 from backend.app.core.config.settings import get_settings
 
 logger = structlog.get_logger()
 
 _chroma_client: chromadb.ClientAPI | None = None
+_embedding_model: SentenceTransformer | None = None
+
+
+def get_embedding_model() -> SentenceTransformer:
+    global _embedding_model
+    if _embedding_model is None:
+        settings = get_settings()
+        model_name = getattr(settings, 'embedding_model', 'all-MiniLM-L6-v2')
+        _embedding_model = SentenceTransformer(model_name)
+        logger.info("embedding_model_loaded", model=model_name)
+    return _embedding_model
 
 
 def get_chroma_client() -> chromadb.ClientAPI:
@@ -38,6 +50,13 @@ class KnowledgeBase:
 
     def __init__(self, collection_name: Optional[str] = None):
         self.collection = get_or_create_collection(collection_name)
+        self._embedding_model = None
+
+    @property
+    def embedding_model(self) -> SentenceTransformer:
+        if self._embedding_model is None:
+            self._embedding_model = get_embedding_model()
+        return self._embedding_model
 
     def add_documents(
         self,
@@ -49,8 +68,12 @@ class KnowledgeBase:
             import uuid
 
             ids = [str(uuid.uuid4()) for _ in documents]
+
+        embeddings = self.embedding_model.encode(documents).tolist()
+
         self.collection.add(
             documents=documents,
+            embeddings=embeddings,
             metadatas=metadatas,
             ids=ids,
         )
@@ -66,8 +89,9 @@ class KnowledgeBase:
         n_results: int = 5,
         where: Optional[dict] = None,
     ) -> list[dict]:
+        query_embedding = self.embedding_model.encode([query]).tolist()
         results = self.collection.query(
-            query_texts=[query],
+            query_embeddings=query_embedding,
             n_results=n_results,
             where=where,
         )

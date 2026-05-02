@@ -18,44 +18,28 @@ async def faq_search(query: str, top_k: int = 3) -> str:
         top_k: 返回结果数量，默认3
     """
     try:
-        factory = get_session_factory()
-        async with factory() as session:
-            query_obj = select(KnowledgeArticle).where(
-                KnowledgeArticle.is_published == True,
-                KnowledgeArticle.category == "general",
+        from backend.app.services.knowledge.chroma import get_knowledge_base
+
+        kb = get_knowledge_base()
+
+        results = kb.search(query=query, n_results=top_k, where={"category": "general"})
+
+        if not results:
+            return json.dumps(
+                [{"question": "未找到相关FAQ", "answer": "请尝试其他关键词或联系人工客服"}],
+                ensure_ascii=False,
             )
-            result = await session.execute(query_obj)
-            articles = result.scalars().all()
 
-            # 关键词匹配
-            scored = []
-            for article in articles:
-                score = 0
-                query_lower = query.lower()
-                if query_lower in article.title.lower():
-                    score += 3
-                if query_lower in article.content.lower():
-                    score += 2
-                if score > 0:
-                    scored.append((score, article))
+        output = []
+        for r in results:
+            output.append({
+                "question": r["metadata"].get("title", "FAQ"),
+                "answer": r["content"],
+                "category": r["metadata"].get("category", "general"),
+                "relevance": r.get("score", 0),
+            })
 
-            scored.sort(key=lambda x: x[0], reverse=True)
-
-            if not scored:
-                return json.dumps(
-                    [{"question": "未找到相关FAQ", "answer": "请尝试其他关键词或联系人工客服"}],
-                    ensure_ascii=False,
-                )
-
-            results = []
-            for _, article in scored[:top_k]:
-                results.append({
-                    "question": article.title,
-                    "answer": article.content,
-                    "category": article.category,
-                })
-
-            return json.dumps(results, ensure_ascii=False)
+        return json.dumps(output, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"搜索失败: {str(e)}"}, ensure_ascii=False)
 
