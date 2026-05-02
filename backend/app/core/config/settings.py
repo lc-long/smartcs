@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # Vector Database
     chroma_persist_dir: str = "./chroma_db"
     chroma_collection: str = "knowledge_base"
+    embedding_model: str = "all-MiniLM-L6-v2"
 
     # Security
     jwt_secret_key: str = "change-me-in-production"
@@ -66,6 +67,15 @@ class Settings(BaseSettings):
     # Observability
     enable_tracing: bool = True
     trace_sample_rate: float = 1.0
+
+    # Agent Configuration
+    agent_max_iterations: int = 5
+    agent_timeout_seconds: float = 30.0
+    agent_retry_attempts: int = 2
+
+    # Working Memory
+    working_memory_max_size: int = 1000
+    working_memory_ttl_seconds: int = 3600
 
 
 @lru_cache
