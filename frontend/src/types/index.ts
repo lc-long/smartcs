@@ -39,6 +39,7 @@ export type WSMessageType =
   | "agent_start"
   | "agent_response"
   | "agent_switch"
+  | "agent_complete"
   | "tool_call"
   | "tool_result"
   | "human_approval_needed"
@@ -46,7 +47,13 @@ export type WSMessageType =
   | "human_takeover"
   | "human_release"
   | "error"
-  | "done";
+  | "done"
+  | "planning"
+  | "sentiment"
+  | "complex_task_start"
+  | "parallel_start"
+  | "subtask_start"
+  | "subtask_complete";
 
 export interface WSEvent {
   type: WSMessageType;
