@@ -73,4 +73,5 @@ class TechnicalAgent(BaseAgent):
 
         system_message = SystemMessage(content=system_prompt)
         prompt_messages = [system_message] + list(messages)
-        return await self._invoke_and_execute_tools(prompt_messages, self.get_tools())
+        response, tools_called = await self._invoke_and_execute_tools(prompt_messages, self.get_tools())
+        return response

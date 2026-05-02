@@ -98,4 +98,5 @@ class RefundAgent(BaseAgent):
         prompt_messages = [system_message] + list(messages)
 
         # 使用 function calling 执行工具
-        return await self._invoke_and_execute_tools(prompt_messages, self.get_tools())
+        response, tools_called = await self._invoke_and_execute_tools(prompt_messages, self.get_tools())
+        return response
