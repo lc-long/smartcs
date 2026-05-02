@@ -10,7 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from backend.app.agents.billing.agent import BillingAgent
-from backend.app.agents.communication import AgentCommunicator, AgentMessage, get_communicator
+from backend.app.agents.communication import AgentCommunicator, AgentMessage, AgentResponse, get_communicator
 from backend.app.agents.general.agent import GeneralAgent
 from backend.app.agents.refund.agent import RefundAgent
 from backend.app.agents.router.agent import RouterAgent
@@ -53,6 +53,7 @@ class CustomerServiceWorkflow:
         self.communicator.register_agent("technical", self.technical)
         self.communicator.register_agent("refund", self.refund)
         self.communicator.register_agent("general", self.general)
+        self.communicator.register_agent("supervisor", self.supervisor)
 
     def build_graph(self) -> CompiledStateGraph:
         if self._graph is not None:
@@ -230,6 +231,14 @@ class CustomerServiceWorkflow:
         # 同时进行意图分类（用于简单任务路由）
         decision = await self.router.classify_intent(messages)
 
+        # 检查是否是多意图，如果是则标记为复杂任务
+        is_multi = getattr(decision, 'is_multi_intent', False)
+        if is_multi and working_memory:
+            working_memory.current_plan = working_memory.current_plan or {}
+            working_memory.current_plan["is_complex"] = True
+            working_memory.current_plan["multi_intent"] = True
+            working_memory.current_plan["all_intents"] = getattr(decision, 'all_intents', [])
+
         return {
             "current_intent": decision.intent.value,
             "routing_confidence": decision.confidence,
@@ -269,24 +278,12 @@ class CustomerServiceWorkflow:
         customer_id = state.get("customer_id")
         conversation_id = state["conversation_id"]
 
-        # 获取工作记忆
         working_memory = self.memory_store.get(conversation_id)
-
-        # 获取对应的Agent
-        agent_map = {
-            "billing": self.billing,
-            "technical": self.technical,
-            "refund": self.refund,
-            "general": self.general,
-        }
-        agent = agent_map.get(agent_name, self.general)
 
         logger.info("execute_simple", agent=agent_name, customer_id=customer_id)
 
-        # 发送Agent开始执行事件
         await self._emit_event("agent_start", {"agent": agent_name})
 
-        # 记录到工作记忆
         if working_memory:
             working_memory.add_thought(
                 f"选择 {agent_name} Agent 处理请求",
@@ -294,11 +291,27 @@ class CustomerServiceWorkflow:
             )
 
         try:
-            response, tools_called = await agent.run(messages, customer_id=customer_id)
-            content = response.content if isinstance(response.content, str) else str(response.content)
-            content = self._strip_think_tags(content)
+            user_text = " ".join(
+                m.content if hasattr(m, "content") else str(m) for m in messages
+            )
 
-            # 记录结果到工作记忆
+            context = {}
+            if working_memory:
+                agent_results = working_memory.get_agent_results()
+                for prev_agent, prev_result in agent_results.items():
+                    context[f"{prev_agent}_result"] = prev_result
+
+            msg = AgentMessage(
+                sender="supervisor",
+                receiver=agent_name,
+                content=user_text,
+                context=context,
+            )
+            response = await self.communicator.send_message(msg, customer_id=customer_id)
+            content = response.content
+
+            tools_called = response.tools_used
+
             if working_memory:
                 working_memory.add_result(content, agent_name)
                 for tool in tools_called:
@@ -310,7 +323,6 @@ class CustomerServiceWorkflow:
 
             logger.info("execute_simple_success", agent=agent_name, tools=tools_called)
 
-            # 发送Agent完成事件
             await self._emit_event("agent_complete", {
                 "agent": agent_name,
                 "tools_called": tools_called,
@@ -459,20 +471,39 @@ class CustomerServiceWorkflow:
             )
 
         try:
-            response, tools_called = await agent.run(messages, customer_id=customer_id)
-            content = response.content if isinstance(response.content, str) else str(response.content)
-            content = self._strip_think_tags(content)
+            # 使用Communicator发送消息，实现Agent间通信
+            user_text = " ".join(
+                m.content if hasattr(m, "content") else str(m) for m in messages
+            )
+
+            # 获取前置Agent的结果作为上下文
+            context = {}
+            if working_memory:
+                agent_results = working_memory.get_agent_results()
+                for prev_agent, prev_result in agent_results.items():
+                    context[f"{prev_agent}_result"] = prev_result
+
+            # 通过Communicator发送消息
+            msg = AgentMessage(
+                sender="supervisor",
+                receiver=agent_name,
+                content=user_text,
+                task_id=task.get("id"),
+                context=context,
+            )
+            response = await self.communicator.send_message(msg)
+            content = response.content
 
             # 发送子任务完成事件
             await self._emit_event("subtask_complete", {
                 "agent": agent_name,
-                "success": True,
-                "tools_called": tools_called,
+                "success": response.success,
+                "tools_used": response.tools_used,
             })
 
             if working_memory:
                 working_memory.add_result(content, agent_name)
-                for tool in tools_called:
+                for tool in response.tools_used:
                     working_memory.add_action(
                         f"调用工具: {tool}",
                         tool=tool,

@@ -47,8 +47,13 @@ class AgentCommunicator:
     def get_agent(self, name: str) -> BaseAgent | None:
         return self._agents.get(name)
 
-    async def send_message(self, message: AgentMessage) -> AgentResponse:
-        """发送消息给指定Agent并等待响应"""
+    async def send_message(self, message: AgentMessage, **kwargs) -> AgentResponse:
+        """发送消息给指定Agent并等待响应
+
+        Args:
+            message: AgentMessage instance
+            **kwargs: Additional arguments passed to agent.run() (e.g., customer_id)
+        """
         agent = self._agents.get(message.receiver)
         if not agent:
             return AgentResponse(
@@ -66,8 +71,8 @@ class AgentCommunicator:
 
             messages.append(HumanMessage(content=message.content))
 
-            # 调用Agent
-            response = await agent.run(messages)
+            # 调用Agent，传递额外参数
+            response = await agent.run(messages, **kwargs)
             content = response.content if isinstance(response.content, str) else str(response.content)
 
             result = AgentResponse(
