@@ -21,50 +21,30 @@ async def knowledge_search(query: str, category: str | None = None, top_k: int =
         top_k: 返回结果数量，默认3
     """
     try:
-        factory = get_session_factory()
-        async with factory() as session:
-            # 简单的关键词搜索（生产环境应使用向量搜索）
-            search_query = select(KnowledgeArticle).where(
-                KnowledgeArticle.is_published == True
+        from backend.app.services.knowledge.chroma import get_knowledge_base
+
+        kb = get_knowledge_base()
+
+        where_filter = {"category": category} if category else None
+
+        results = kb.search(query=query, n_results=top_k, where=where_filter)
+
+        if not results:
+            return json.dumps(
+                [{"content": "未找到相关知识文档", "source": "知识库", "relevance": 0}],
+                ensure_ascii=False,
             )
-            if category:
-                search_query = search_query.where(KnowledgeArticle.category == category)
 
-            result = await session.execute(search_query)
-            articles = result.scalars().all()
+        output = []
+        for r in results:
+            output.append({
+                "content": r["content"][:500],
+                "source": r["metadata"].get("title", "知识库"),
+                "relevance": r.get("score", 0),
+                "category": r["metadata"].get("category", "general"),
+            })
 
-            # 简单的关键词匹配评分
-            scored = []
-            for article in articles:
-                score = 0
-                query_lower = query.lower()
-                if query_lower in article.title.lower():
-                    score += 3
-                if query_lower in article.content.lower():
-                    score += 2
-                if article.tags and query_lower in article.tags.lower():
-                    score += 1
-                if score > 0:
-                    scored.append((score, article))
-
-            scored.sort(key=lambda x: x[0], reverse=True)
-
-            if not scored:
-                return json.dumps(
-                    [{"content": "未找到相关知识文档", "source": "知识库", "relevance": 0}],
-                    ensure_ascii=False,
-                )
-
-            results = []
-            for score, article in scored[:top_k]:
-                results.append({
-                    "content": article.content[:500],
-                    "source": article.title,
-                    "relevance": min(score / 5, 1.0),
-                    "category": article.category,
-                })
-
-            return json.dumps(results, ensure_ascii=False)
+        return json.dumps(output, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"搜索失败: {str(e)}"}, ensure_ascii=False)
 
@@ -143,6 +123,51 @@ async def ticket_lookup(customer_id: str, status: str | None = None) -> str:
             return json.dumps(data, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"查询失败: {str(e)}"}, ensure_ascii=False)
+
+
+@tool
+async def ticket_update(ticket_no: str, status: str | None = None, comment: str | None = None, priority: str | None = None) -> str:
+    """更新技术支持工单的状态、优先级或添加备注。
+
+    Args:
+        ticket_no: 工单号
+        status: 新状态 (open/in_progress/resolved/closed)
+        comment: 添加的备注内容
+        priority: 新优先级 (low/medium/high/critical)
+    """
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            result = await session.execute(
+                select(SupportTicket).where(SupportTicket.ticket_no == ticket_no)
+            )
+            ticket = result.scalar_one_or_none()
+
+            if not ticket:
+                return json.dumps({"error": f"未找到工单: {ticket_no}"}, ensure_ascii=False)
+
+            updates = []
+            if status:
+                ticket.status = status
+                updates.append(f"状态更新为: {status}")
+            if priority:
+                ticket.priority = priority
+                updates.append(f"优先级更新为: {priority}")
+            if comment:
+                ticket.description = f"{ticket.description}\n\n[客服备注 {datetime.now().strftime('%Y-%m-%d %H:%M')}] {comment}"
+                updates.append("已添加备注")
+
+            await session.commit()
+
+            return json.dumps({
+                "ticket_no": ticket_no,
+                "status": ticket.status,
+                "priority": ticket.priority,
+                "updated_fields": updates,
+                "message": f"工单更新成功: {'; '.join(updates)}",
+            }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"更新工单失败: {str(e)}"}, ensure_ascii=False)
 
 
 @tool
