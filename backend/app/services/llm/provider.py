@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import threading
 from dataclasses import dataclass, field
@@ -42,6 +43,7 @@ class TokenCounter:
 
     PRICING = {
         "MiniMax-Text-01": {"prompt": 0.001, "completion": 0.003},
+        "MiniMax-M2.7": {"prompt": 0.001, "completion": 0.003},
         "gpt-4o": {"prompt": 0.005, "completion": 0.015},
         "gpt-4o-mini": {"prompt": 0.00015, "completion": 0.0006},
         "claude-3-5-sonnet": {"prompt": 0.003, "completion": 0.015},
@@ -130,6 +132,45 @@ class LLMProvider:
         llm = self._create_llm(model_name, temperature)
         self._cache[cache_key] = llm
         return llm
+
+    async def invoke_with_retry(
+        self,
+        llm: BaseChatModel,
+        messages: list,
+        timeout: float | None = None,
+    ) -> Any:
+        """Invoke LLM with retry and exponential backoff."""
+        settings = self._settings
+        max_retries = settings.agent_retry_attempts
+        base_delay = settings.agent_retry_delay
+        timeout = timeout or settings.agent_timeout_seconds
+        last_error: Exception | None = None
+
+        for attempt in range(max_retries):
+            try:
+                return await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "llm_invoke_timeout",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    timeout=timeout,
+                )
+                raise
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "llm_invoke_error",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    error=str(e),
+                )
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
+
+        logger.error("llm_invoke_all_retries_failed", error=str(last_error))
+        raise last_error
 
     def _create_llm(self, model_name: str, temperature: float) -> BaseChatModel:
         provider = self._settings.llm_provider

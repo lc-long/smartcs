@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     agent_max_iterations: int = 5
     agent_timeout_seconds: float = 30.0
     agent_retry_attempts: int = 2
+    agent_retry_delay: float = 0.5
 
     # Working Memory
     working_memory_max_size: int = 1000
