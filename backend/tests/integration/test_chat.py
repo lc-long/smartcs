@@ -20,8 +20,8 @@ async def auth_client():
         response = await ac.post(
             "/api/v1/auth/login",
             data={
-                "username": "agent1",
-                "password": "agent123",
+                "username": "testuser",
+                "password": "testpassword123",
             },
         )
         if response.status_code == 200:
@@ -91,8 +91,8 @@ async def test_chat_with_conversation_id(auth_client: AsyncClient):
         pytest.skip(f"Chat endpoint returned {response.status_code}: {response.text}")
 
 
-async def test_chat_empty_message(client: AsyncClient):
-    response = await client.post(
+async def test_chat_empty_message(auth_client: AsyncClient):
+    response = await auth_client.post(
         "/api/v1/chat",
         json={
             "customer_id": "C001",
@@ -102,8 +102,8 @@ async def test_chat_empty_message(client: AsyncClient):
     assert response.status_code == 422
 
 
-async def test_chat_missing_customer_id(client: AsyncClient):
-    response = await client.post(
+async def test_chat_missing_customer_id(auth_client: AsyncClient):
+    response = await auth_client.post(
         "/api/v1/chat",
         json={
             "message": "Hello",
