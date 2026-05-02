@@ -1,6 +1,6 @@
 # SmartCS - Enterprise Multi-Agent Customer Service System
 
-A production-ready multi-agent customer service system built with **LangGraph** + **FastAPI** + **React**, powered by **MiniMax** LLM.
+A production-ready multi-agent customer service system built with **LangGraph** + **FastAPI** + **React**, powered by **DeepSeek** LLM.
 
 ## Architecture Overview
 
@@ -34,7 +34,7 @@ User Request
 └─────────────────────────────────────────────┘
                    │
                    ▼
-           MiniMax LLM (M2.7)
+           DeepSeek LLM
 ```
 
 ## Project Structure
@@ -211,7 +211,7 @@ docker-compose up -d
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_PROVIDER` | LLM provider (`minimax`/`openai`/`anthropic`) | `minimax` |
+| `LLM_PROVIDER` | LLM provider (`minimax`/`openai`/`anthropic`/`deepseek`) | `deepseek` |
 | `MINIMAX_API_KEY` | MiniMax API key | - |
 | `DEFAULT_MODEL` | Default model for all agents | `MiniMax-M2.7` |
 | `ROUTER_MODEL` | Router agent model | `MiniMax-M2.7` |
@@ -334,7 +334,7 @@ uv run mypy backend/
 - [x] Project documentation (architecture, API, requirements)
 
 ### 🚧 In Progress
-- [ ] Router Agent stability (MiniMax API inconsistency debugging)
+- [ ] Frontend dark theme refinements
 
 ### 📋 Planned
 - [ ] Rate limiting
