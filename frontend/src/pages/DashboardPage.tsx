@@ -3,35 +3,27 @@ import { api } from "../services/api";
 
 interface DashboardStats {
   summary: {
-    total_products: number;
     total_customers: number;
     total_orders: number;
     total_revenue: number;
-    pending_orders: number;
+    today_orders: number;
+    pending_tickets: number;
     pending_refunds: number;
-    open_tickets: number;
+    avg_order_amount: number;
+    avg_rating: number;
   };
-  recent_orders: Array<{
-    order_no: string;
-    customer_id: string;
-    amount: number;
-    status: string;
-    created_at: string;
-  }>;
-  hot_products: Array<{
-    name: string;
+  order_trend: Array<{
+    date: string;
     count: number;
-    total: number;
+    amount: number;
+  }>;
+  order_status_distribution: Record<string, number>;
+  top_products: Array<{
+    name: string;
+    quantity: number;
+    amount: number;
   }>;
 }
-
-const statusColors: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-800",
-  processing: "bg-blue-100 text-blue-800",
-  shipped: "bg-purple-100 text-purple-800",
-  delivered: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800",
-};
 
 const statusLabels: Record<string, string> = {
   pending: "待处理",
@@ -39,6 +31,14 @@ const statusLabels: Record<string, string> = {
   shipped: "已发货",
   delivered: "已送达",
   cancelled: "已取消",
+};
+
+const statusColors: Record<string, string> = {
+  pending: "bg-yellow-100 text-yellow-800",
+  processing: "bg-blue-100 text-blue-800",
+  shipped: "bg-purple-100 text-purple-800",
+  delivered: "bg-green-100 text-green-800",
+  cancelled: "bg-red-100 text-red-800",
 };
 
 export function DashboardPage() {
@@ -51,7 +51,7 @@ export function DashboardPage() {
 
   async function loadStats() {
     try {
-      const data = await api.getDashboardStats();
+      const data = await api.getAnalyticsDashboard();
       setStats(data);
     } catch (error) {
       console.error("Failed to load stats:", error);
@@ -104,24 +104,24 @@ export function DashboardPage() {
           color="purple"
         />
         <StatCard
-          title="总商品"
-          value={stats.summary.total_products}
-          icon="🛍️"
+          title="今日订单"
+          value={stats.summary.today_orders}
+          icon="📈"
           color="orange"
         />
       </div>
 
       {/* 待处理事项 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">待处理订单</p>
+              <p className="text-sm text-gray-600">待处理工单</p>
               <p className="text-3xl font-bold text-yellow-600">
-                {stats.summary.pending_orders}
+                {stats.summary.pending_tickets}
               </p>
             </div>
-            <div className="text-4xl">⏳</div>
+            <div className="text-4xl">🎫</div>
           </div>
         </div>
         <div className="bg-white rounded-lg shadow p-6">
@@ -138,44 +138,52 @@ export function DashboardPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">待处理工单</p>
+              <p className="text-sm text-gray-600">平均订单金额</p>
               <p className="text-3xl font-bold text-blue-600">
-                {stats.summary.open_tickets}
+                ¥{stats.summary.avg_order_amount.toLocaleString()}
               </p>
             </div>
-            <div className="text-4xl">🎫</div>
+            <div className="text-4xl">📊</div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">客户满意度</p>
+              <p className="text-3xl font-bold text-green-600">
+                {stats.summary.avg_rating.toFixed(1)} ⭐
+              </p>
+            </div>
+            <div className="text-4xl">😊</div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 最近订单 */}
+        {/* 订单状态分布 */}
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold text-gray-900">最近订单</h2>
+            <h2 className="text-lg font-semibold text-gray-900">订单状态分布</h2>
           </div>
           <div className="p-6">
             <div className="space-y-4">
-              {stats.recent_orders.map((order, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium text-gray-900">{order.order_no}</p>
-                    <p className="text-sm text-gray-600">{order.customer_id}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium text-gray-900">
-                      ¥{order.amount.toLocaleString()}
-                    </p>
-                    <span
-                      className={`inline-block px-2 py-1 text-xs rounded-full ${
-                        statusColors[order.status] || "bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      {statusLabels[order.status] || order.status}
+              {Object.entries(stats.order_status_distribution).map(([status, count]) => (
+                <div key={status} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[status] || "bg-gray-100 text-gray-800"}`}>
+                      {statusLabels[status] || status}
                     </span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full"
+                        style={{
+                          width: `${(count / stats.summary.total_orders) * 100}%`,
+                        }}
+                      ></div>
+                    </div>
+                    <span className="font-medium text-gray-900">{count}</span>
                   </div>
                 </div>
               ))}
@@ -183,14 +191,14 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* 热门商品 */}
+        {/* 热销商品 */}
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold text-gray-900">热门商品</h2>
+            <h2 className="text-lg font-semibold text-gray-900">热销商品 Top 5</h2>
           </div>
           <div className="p-6">
             <div className="space-y-4">
-              {stats.hot_products.map((product, index) => (
+              {stats.top_products.map((product, index) => (
                 <div
                   key={index}
                   className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
@@ -201,12 +209,12 @@ export function DashboardPage() {
                     </span>
                     <div>
                       <p className="font-medium text-gray-900">{product.name}</p>
-                      <p className="text-sm text-gray-600">{product.count} 笔订单</p>
+                      <p className="text-sm text-gray-600">{product.quantity} 件</p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="font-medium text-gray-900">
-                      ¥{product.total.toLocaleString()}
+                      ¥{product.amount.toLocaleString()}
                     </p>
                   </div>
                 </div>

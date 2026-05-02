@@ -324,4 +324,103 @@ export const api = {
       }>;
     }>(`/admin/ecommerce/knowledge${query}`);
   },
+
+  // Analytics - 新增分析API
+  getAnalyticsDashboard: () =>
+    request<{
+      summary: {
+        total_customers: number;
+        total_orders: number;
+        total_revenue: number;
+        today_orders: number;
+        pending_tickets: number;
+        pending_refunds: number;
+        avg_order_amount: number;
+        avg_rating: number;
+      };
+      order_trend: Array<{
+        date: string;
+        count: number;
+        amount: number;
+      }>;
+      order_status_distribution: Record<string, number>;
+      top_products: Array<{
+        name: string;
+        quantity: number;
+        amount: number;
+      }>;
+    }>("/analytics/dashboard"),
+
+  getAgentPerformance: (days = 30) =>
+    request<{
+      period_days: number;
+      summary: {
+        total_tickets: number;
+        resolved_tickets: number;
+        resolution_rate: number;
+      };
+      agent_ticket_stats: Array<{
+        agent: string;
+        total_tickets: number;
+        resolved: number;
+        in_progress: number;
+        resolution_rate: number;
+      }>;
+      agent_refund_stats: Array<{
+        agent: string;
+        total_reviews: number;
+        approved: number;
+        rejected: number;
+      }>;
+    }>(`/analytics/agents/performance?days=${days}`),
+
+  getCustomerSatisfaction: (days = 30) =>
+    request<{
+      period_days: number;
+      review_summary: {
+        total_reviews: number;
+        avg_rating: number;
+        positive_rate: number;
+        negative_rate: number;
+      };
+      rating_distribution: Record<number, number>;
+      feedback_distribution: Record<string, number>;
+      feedback_status: Record<string, number>;
+      ticket_category_distribution: Record<string, number>;
+      ticket_priority_distribution: Record<string, number>;
+    }>(`/analytics/satisfaction?days=${days}`),
+
+  getProductAnalytics: () =>
+    request<{
+      product_sales_ranking: Array<{
+        name: string;
+        order_count: number;
+        quantity: number;
+        amount: number;
+      }>;
+      product_rating_ranking: Array<{
+        name: string;
+        rating: number;
+        review_count: number;
+      }>;
+      low_stock_alerts: Array<{
+        sku: string;
+        name: string;
+        stock: number;
+        category: string;
+      }>;
+      category_sales: Array<{
+        category: string;
+        amount: number;
+        quantity: number;
+      }>;
+    }>("/analytics/products/analytics"),
+
+  getLogisticsStats: () =>
+    request<{
+      status_distribution: Record<string, number>;
+      carrier_distribution: Record<string, number>;
+      avg_delivery_days: number;
+      in_transit_count: number;
+    }>("/analytics/logistics"),
 };

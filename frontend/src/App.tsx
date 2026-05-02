@@ -9,6 +9,8 @@ import { OrdersPage } from "./pages/OrdersPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { RefundsPage } from "./pages/RefundsPage";
+import { LogisticsPage } from "./pages/LogisticsPage";
+import { FeedbackPage } from "./pages/FeedbackPage";
 
 // 路由保护组件
 function ProtectedRoute({ requiredRole }: { requiredRole?: string }) {
@@ -55,6 +57,8 @@ function AppLayout() {
   const navItems = [
     { path: "/", label: "智能客服", icon: "💬", group: "客服", show: true },
     { path: "/dashboard", label: "数据看板", icon: "📊", group: "数据", show: true },
+    { path: "/logistics", label: "物流统计", icon: "🚚", group: "数据", show: isAgent },
+    { path: "/feedback", label: "客户满意度", icon: "😊", group: "数据", show: isAgent },
     { path: "/products", label: "商品管理", icon: "🛍️", group: "电商", show: true },
     { path: "/orders", label: "订单管理", icon: "📦", group: "电商", show: true },
     { path: "/customers", label: "客户管理", icon: "👥", group: "电商", show: true },
@@ -158,6 +162,8 @@ export default function App() {
             <Route path="/knowledge" element={<KnowledgePage />} />
             <Route element={<ProtectedRoute requiredRole="agent" />}>
               <Route path="/refunds" element={<RefundsPage />} />
+              <Route path="/logistics" element={<LogisticsPage />} />
+              <Route path="/feedback" element={<FeedbackPage />} />
             </Route>
             <Route element={<ProtectedRoute requiredRole="admin" />}>
               <Route path="/admin" element={<AdminPage />} />
