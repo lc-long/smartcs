@@ -1,261 +1,147 @@
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "../../store/chatStore";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { useAuth } from "../../contexts/AuthContext";
 import type { WSEvent } from "../../types";
 import MessageBubble from "./MessageBubble";
+import { Send, Package, CreditCard, RotateCcw, Wrench, FileText, Phone, Sparkles, Loader2 } from "lucide-react";
 
-const QUICK_QUESTIONS = [
-  { label: "查订单", question: "帮我查一下我的订单" },
-  { label: "查账单", question: "帮我查一下我的账单" },
-  { label: "退款", question: "我想申请退款" },
-  { label: "产品问题", question: "我的设备出问题了" },
-  { label: "退款政策", question: "你们的退款政策是什么？" },
-  { label: "客服电话", question: "你们的客服电话是多少？" },
-];
-
-const AGENT_LABELS: Record<string, { name: string; color: string; icon: string }> = {
-  billing: { name: "账单客服", color: "bg-green-100 text-green-800", icon: "💰" },
-  technical: { name: "技术支持", color: "bg-blue-100 text-blue-800", icon: "🔧" },
-  refund: { name: "退款客服", color: "bg-orange-100 text-orange-800", icon: "💸" },
-  general: { name: "通用客服", color: "bg-purple-100 text-purple-800", icon: "💬" },
-  escalation: { name: "人工客服", color: "bg-red-100 text-red-800", icon: "👤" },
-  supervisor: { name: "智能路由", color: "bg-gray-100 text-gray-800", icon: "🤖" },
+const AGENT_LABELS: Record<string, string> = { billing: "billing", technical: "techSupport", refund: "refund", general: "general", escalation: "human", supervisor: "smartRouter" };
+const AGENT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  billing: { bg: "bg-emerald-950/50", text: "text-emerald-400", border: "border-emerald-800/50" },
+  technical: { bg: "bg-sky-950/50", text: "text-sky-400", border: "border-sky-800/50" },
+  refund: { bg: "bg-amber-950/50", text: "text-amber-400", border: "border-amber-800/50" },
+  general: { bg: "bg-violet-950/50", text: "text-violet-400", border: "border-violet-800/50" },
+  escalation: { bg: "bg-red-950/50", text: "text-red-400", border: "border-red-800/50" },
+  supervisor: { bg: "bg-zinc-800/50", text: "text-zinc-400", border: "border-zinc-700/50" },
 };
 
 export default function ChatWindow() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [input, setInput] = useState("");
   const customerId = user?.customer_id || `guest-${user?.id?.slice(0, 8) || "unknown"}`;
   const [conversationId] = useState(() => crypto.randomUUID());
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const { messages, addMessage, isProcessing, setProcessing, currentAgent, setCurrentAgent, addEvent } =
-    useChatStore();
-
-  const { connected, sendMessage } = useWebSocket({
-    conversationId,
-    customerId,
-    onEvent: handleEvent,
-  });
+  const { messages, addMessage, isProcessing, setProcessing, currentAgent, setCurrentAgent, addEvent } = useChatStore();
+  const { connected, sendMessage } = useWebSocket({ conversationId, customerId, onEvent: handleEvent });
 
   function handleEvent(event: WSEvent) {
     addEvent(event);
-
     switch (event.type) {
-      case "planning":
-        if (event.status === "analyzing") {
-          setCurrentAgent("supervisor");
-          setProcessing(true);
-        }
-        break;
-
-      case "complex_task_start":
-        // 复杂任务开始，显示正在协调多个Agent
-        setCurrentAgent("supervisor");
-        setProcessing(true);
-        break;
-
-      case "parallel_start":
-        // 并行执行开始
-        setCurrentAgent("supervisor");
-        break;
-
-      case "subtask_start":
-        // 子任务开始，更新当前Agent
-        setCurrentAgent(event.agent as string);
-        break;
-
-      case "subtask_complete":
-        // 子任务完成，但可能还有其他子任务
-        break;
-
-      case "agent_start":
-        setCurrentAgent(event.agent as string);
-        setProcessing(true);
-        break;
-
-      case "agent_complete":
-        // Agent 完成，但可能还有其他 Agent 在执行
-        break;
-
-      case "agent_response":
-        addMessage({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: event.content as string,
-          agent_name: event.agent as string,
-          tools_called: [],
-          created_at: new Date().toISOString(),
-        });
-        setProcessing(false);
-        setCurrentAgent(null);
-        break;
-
-      case "error":
-        addMessage({
-          id: crypto.randomUUID(),
-          role: "system",
-          content: event.message as string,
-          tools_called: [],
-          created_at: new Date().toISOString(),
-        });
-        setProcessing(false);
-        setCurrentAgent(null);
-        break;
-
-      case "human_approval_needed":
-        addMessage({
-          id: crypto.randomUUID(),
-          role: "system",
-          content: `[需要人工审批] ${event.reason}`,
-          tools_called: [],
-          created_at: new Date().toISOString(),
-        });
-        break;
+      case "planning": if (event.status === "analyzing") { setCurrentAgent("supervisor"); setProcessing(true); } break;
+      case "complex_task_start": case "parallel_start": setCurrentAgent("supervisor"); setProcessing(true); break;
+      case "subtask_start": setCurrentAgent(event.agent as string); break;
+      case "agent_start": setCurrentAgent(event.agent as string); setProcessing(true); break;
+      case "agent_response": addMessage({ id: crypto.randomUUID(), role: "assistant", content: event.content as string, agent_name: event.agent as string, tools_called: [], created_at: new Date().toISOString() }); setProcessing(false); setCurrentAgent(null); break;
+      case "error": addMessage({ id: crypto.randomUUID(), role: "system", content: event.message as string, tools_called: [], created_at: new Date().toISOString() }); setProcessing(false); setCurrentAgent(null); break;
+      case "human_approval_needed": addMessage({ id: crypto.randomUUID(), role: "system", content: `[${t("chat.needsApproval")}] ${event.reason}`, tools_called: [], created_at: new Date().toISOString() }); break;
     }
   }
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const handleSend = (text?: string) => {
-    const messageText = text || input.trim();
-    if (!messageText || isProcessing) return;
-
-    addMessage({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: messageText,
-      tools_called: [],
-      created_at: new Date().toISOString(),
-    });
-
-    sendMessage(messageText);
+    const msg = text || input.trim();
+    if (!msg || isProcessing) return;
+    addMessage({ id: crypto.randomUUID(), role: "user", content: msg, tools_called: [], created_at: new Date().toISOString() });
+    sendMessage(msg);
     setInput("");
   };
 
-  const agentInfo = currentAgent ? AGENT_LABELS[currentAgent] : null;
+  const QUICK = [
+    { label: t("chat.myOrders"), question: "Show me my orders", icon: Package },
+    { label: t("chat.billing"), question: "Check my billing", icon: CreditCard },
+    { label: t("chat.refund"), question: "I want to request a refund", icon: RotateCcw },
+    { label: t("chat.techSupport"), question: "My device has an issue", icon: Wrench },
+    { label: t("chat.refundPolicy"), question: "What is your refund policy?", icon: FileText },
+    { label: t("chat.contact"), question: "What is your customer service number?", icon: Phone },
+  ];
+
+  const agentInfo = currentAgent ? { label: t(`agent.${AGENT_LABELS[currentAgent] || "general"}`), colors: AGENT_COLORS[currentAgent] || AGENT_COLORS.general } : null;
 
   return (
     <div className="flex flex-col h-full">
-      {/* 头部 */}
-      <div className="border-b px-6 py-3 bg-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">智能客服</h1>
-            <p className="text-sm text-gray-500">
-              {connected ? (
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  已连接
-                </span>
-              ) : (
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
-                  连接中...
-                </span>
-              )}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {isProcessing && agentInfo && (
-              <span className={`px-3 py-1 rounded-full text-sm flex items-center gap-1 ${agentInfo.color}`}>
-                <span>{agentInfo.icon}</span>
-                <span>{agentInfo.name} 处理中...</span>
-              </span>
-            )}
-            <span className="text-xs text-gray-400">ID: {customerId}</span>
+      {/* Header */}
+      <header className="h-12 border-b border-zinc-800/50 px-5 flex items-center justify-between flex-shrink-0 bg-zinc-950">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-indigo-400" />
+          <h1 className="text-sm font-semibold text-zinc-100">{t("chat.title")}</h1>
+          <div className="flex items-center gap-1 ml-2">
+            <div className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`} />
+            <span className="text-[11px] text-zinc-500">{connected ? t("chat.connected") : t("chat.connecting")}</span>
           </div>
         </div>
-      </div>
-
-      {/* 消息区域 */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-400 mt-20">
-            <p className="text-5xl mb-4">🤖</p>
-            <p className="text-lg font-medium">欢迎使用智能客服系统</p>
-            <p className="text-sm mt-2 mb-8">请选择下方快捷问题或直接输入您的问题</p>
-            
-            {/* 快速问题模板 */}
-            <div className="flex flex-wrap justify-center gap-2 max-w-md mx-auto">
-              {QUICK_QUESTIONS.map((q) => (
-                <button
-                  key={q.label}
-                  onClick={() => handleSend(q.question)}
-                  className="px-4 py-2 bg-white border rounded-full text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 transition-colors"
-                >
-                  {q.label}
-                </button>
-              ))}
-            </div>
+        {isProcessing && agentInfo && (
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border ${agentInfo.colors.bg} ${agentInfo.colors.text} ${agentInfo.colors.border}`}>
+            <Loader2 className="w-3 h-3 animate-spin" />
+            {agentInfo.label} {t("chat.processing")}
           </div>
         )}
+      </header>
 
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
-
-        {isProcessing && (
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm">
-              {agentInfo?.icon || "🤖"}
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto">
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center px-6">
+            <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center mb-4">
+              <Sparkles className="w-6 h-6 text-indigo-400" />
             </div>
-            <div className="bg-gray-100 rounded-2xl rounded-tl-md px-4 py-3">
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.1s]" />
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+            <h2 className="text-lg font-semibold text-zinc-100 mb-1.5">{t("chat.howCanIHelp")}</h2>
+            <p className="text-xs text-zinc-500 mb-6 text-center max-w-sm">{t("chat.helpDesc")}</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-md w-full">
+              {QUICK.map((q) => {
+                const Icon = q.icon;
+                return (
+                  <button key={q.label} onClick={() => handleSend(q.question)}
+                    className="group flex items-center gap-2 p-2.5 rounded-lg border border-zinc-800 hover:border-indigo-600/50 hover:bg-zinc-800/60 transition-all duration-150 text-left cursor-pointer">
+                    <Icon className="w-3.5 h-3.5 text-zinc-500 group-hover:text-indigo-400 flex-shrink-0" />
+                    <span className="text-xs font-medium text-zinc-400 group-hover:text-zinc-200">{q.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="px-5 py-3 space-y-0.5">
+            {messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
+            {isProcessing && (
+              <div className="flex items-start gap-2.5 py-1.5 animate-fade-in">
+                <div className="w-7 h-7 rounded-md bg-zinc-800 flex items-center justify-center flex-shrink-0">
+                  <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
                 </div>
-                <span className="text-sm text-gray-500">
-                  {currentAgent === "supervisor"
-                    ? "正在协调多个Agent处理..."
-                    : agentInfo
-                    ? `${agentInfo.name} 正在处理...`
-                    : "AI 正在思考..."}
-                </span>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-xl rounded-tl-sm px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex gap-0.5">
+                      <span className="w-1 h-1 bg-zinc-500 rounded-full typing-dot" />
+                      <span className="w-1 h-1 bg-zinc-500 rounded-full typing-dot" />
+                      <span className="w-1 h-1 bg-zinc-500 rounded-full typing-dot" />
+                    </div>
+                    <span className="text-[11px] text-zinc-500">
+                      {currentAgent === "supervisor" ? t("chat.coordinating") : agentInfo ? `${agentInfo.label} ${t("chat.processing")}` : t("chat.thinking")}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
-      {/* 输入区域 */}
-      <div className="border-t p-4 bg-white">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="输入消息..."
-            className="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isProcessing}
-          />
-          <button
-            onClick={() => handleSend()}
-            disabled={isProcessing || !input.trim()}
-            className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            发送
+      {/* Input */}
+      <div className="border-t border-zinc-800/50 p-3 flex-shrink-0 bg-zinc-950">
+        <div className="flex gap-2 items-center max-w-4xl mx-auto">
+          <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+            placeholder={t("chat.typeMessage")}
+            className="flex-1 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600/50 transition-all placeholder:text-zinc-600 bg-zinc-900 text-zinc-100"
+            disabled={isProcessing} />
+          <button onClick={() => handleSend()} disabled={isProcessing || !input.trim()}
+            className="p-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer flex-shrink-0">
+            <Send className="w-4 h-4" />
           </button>
-        </div>
-        <div className="flex gap-2 mt-2">
-          {QUICK_QUESTIONS.slice(0, 4).map((q) => (
-            <button
-              key={q.label}
-              onClick={() => handleSend(q.question)}
-              disabled={isProcessing}
-              className="text-xs text-gray-500 hover:text-blue-500 disabled:opacity-50"
-            >
-              {q.label}
-            </button>
-          ))}
         </div>
       </div>
     </div>
