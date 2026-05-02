@@ -18,9 +18,83 @@ html {
 
 body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
-  background-color: #09090B;
-  color: #FAFAFA;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
   line-height: 1.6;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Dark theme (default) */
+:root,
+[data-theme="dark"] {
+  --bg-app: #09090B;
+  --bg-surface: #18181B;
+  --bg-elevated: #27272A;
+  --bg-hover: #3F3F46;
+  --border: #27272A;
+  --border-subtle: #1E1E22;
+  --text-primary: #FAFAFA;
+  --text-secondary: #A1A1AA;
+  --text-muted: #71717A;
+  --text-dim: #52525B;
+  --accent: #6366F1;
+  --accent-hover: #818CF8;
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --error: #EF4444;
+  --user-bubble: #6366F1;
+  --user-bubble-text: #FFFFFF;
+  --ai-bubble: #18181B;
+  --ai-bubble-border: #27272A;
+  --ai-bubble-text: #FAFAFA;
+  --sidebar-bg: #09090B;
+  --sidebar-border: rgba(39, 39, 42, 0.7);
+  --input-bg: #18181B;
+  --input-border: #27272A;
+  --table-header: #18181B;
+  --table-row-hover: rgba(39, 39, 42, 0.3);
+  --scrollbar: #27272A;
+  --scrollbar-hover: #3F3F46;
+  --selection-bg: rgba(99, 102, 241, 0.3);
+  --selection-text: #fff;
+  --badge-bg: rgba(39, 39, 42, 0.5);
+  --badge-border: rgba(63, 63, 70, 0.5);
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg-app: #FAFAFA;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F4F4F5;
+  --bg-hover: #E4E4E7;
+  --border: #E4E4E7;
+  --border-subtle: #F4F4F5;
+  --text-primary: #09090B;
+  --text-secondary: #52525B;
+  --text-muted: #71717A;
+  --text-dim: #A1A1AA;
+  --accent: #4F46E5;
+  --accent-hover: #6366F1;
+  --success: #16A34A;
+  --warning: #D97706;
+  --error: #DC2626;
+  --user-bubble: #4F46E5;
+  --user-bubble-text: #FFFFFF;
+  --ai-bubble: #FFFFFF;
+  --ai-bubble-border: #E4E4E7;
+  --ai-bubble-text: #09090B;
+  --sidebar-bg: #FFFFFF;
+  --sidebar-border: #E4E4E7;
+  --input-bg: #FFFFFF;
+  --input-border: #E4E4E7;
+  --table-header: #F4F4F5;
+  --table-row-hover: rgba(244, 244, 245, 0.5);
+  --scrollbar: #D4D4D8;
+  --scrollbar-hover: #A1A1AA;
+  --selection-bg: rgba(79, 70, 229, 0.15);
+  --selection-text: #09090B;
+  --badge-bg: #F4F4F5;
+  --badge-border: #E4E4E7;
 }
 
 ::-webkit-scrollbar {
@@ -33,21 +107,21 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272A;
+  background: var(--scrollbar);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3F3F46;
+  background: var(--scrollbar-hover);
 }
 
 ::selection {
-  background-color: rgba(99, 102, 241, 0.3);
-  color: #fff;
+  background-color: var(--selection-bg);
+  color: var(--selection-text);
 }
 
 *:focus-visible {
-  outline: 2px solid #6366f1;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
