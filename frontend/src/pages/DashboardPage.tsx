@@ -1,225 +1,80 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../services/api";
+import { Package, DollarSign, Users, TrendingUp, Clock, RotateCcw, BarChart3, Star, ArrowUpRight, ArrowDownRight } from "lucide-react";
 
 interface DashboardStats {
-  summary: {
-    total_customers: number;
-    total_orders: number;
-    total_revenue: number;
-    today_orders: number;
-    pending_tickets: number;
-    pending_refunds: number;
-    avg_order_amount: number;
-    avg_rating: number;
-  };
-  order_trend: Array<{
-    date: string;
-    count: number;
-    amount: number;
-  }>;
+  summary: { total_customers: number; total_orders: number; total_revenue: number; today_orders: number; pending_tickets: number; pending_refunds: number; avg_order_amount: number; avg_rating: number; };
   order_status_distribution: Record<string, number>;
-  top_products: Array<{
-    name: string;
-    quantity: number;
-    amount: number;
-  }>;
+  top_products: Array<{ name: string; quantity: number; amount: number }>;
 }
 
-const statusLabels: Record<string, string> = {
-  pending: "待处理",
-  processing: "处理中",
-  shipped: "已发货",
-  delivered: "已送达",
-  cancelled: "已取消",
-};
-
-const statusColors: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-800",
-  processing: "bg-blue-100 text-blue-800",
-  shipped: "bg-purple-100 text-purple-800",
-  delivered: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800",
+const statusStyles: Record<string, { text: string; bar: string }> = {
+  pending: { text: "text-amber-400", bar: "bg-amber-500" },
+  processing: { text: "text-sky-400", bar: "bg-sky-500" },
+  shipped: { text: "text-violet-400", bar: "bg-violet-500" },
+  delivered: { text: "text-emerald-400", bar: "bg-emerald-500" },
+  cancelled: { text: "text-red-400", bar: "bg-red-500" },
 };
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadStats();
-  }, []);
+  useEffect(() => { api.getAnalyticsDashboard().then(setStats).catch(console.error).finally(() => setLoading(false)); }, []);
 
-  async function loadStats() {
-    try {
-      const data = await api.getAnalyticsDashboard();
-      setStats(data);
-    } catch (error) {
-      console.error("Failed to load stats:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (!stats) {
-    return (
-      <div className="flex items-center justify-center h-full text-gray-500">
-        加载失败
-      </div>
-    );
-  }
+  if (loading) return <div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin" /></div>;
+  if (!stats) return <div className="flex items-center justify-center h-full text-zinc-500 text-sm">{t("common.loadingFailed")}</div>;
 
   return (
-    <div className="p-6 bg-gray-50 min-h-full">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">仪表盘</h1>
-        <p className="text-gray-600">智能客服系统运行概览</p>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-lg font-bold text-zinc-100">{t("dashboard.title")}</h1>
+        <p className="text-xs text-zinc-500 mt-0.5">{t("dashboard.subtitle")}</p>
       </div>
 
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard
-          title="总订单"
-          value={stats.summary.total_orders}
-          icon="📦"
-          color="blue"
-        />
-        <StatCard
-          title="总收入"
-          value={`¥${stats.summary.total_revenue.toLocaleString()}`}
-          icon="💰"
-          color="green"
-        />
-        <StatCard
-          title="总客户"
-          value={stats.summary.total_customers}
-          icon="👥"
-          color="purple"
-        />
-        <StatCard
-          title="今日订单"
-          value={stats.summary.today_orders}
-          icon="📈"
-          color="orange"
-        />
+      <div className="grid grid-cols-4 gap-3 mb-4">
+        <StatCard title={t("dashboard.totalOrders")} value={stats.summary.total_orders.toLocaleString()} icon={Package} trend="+12.5%" up />
+        <StatCard title={t("dashboard.totalRevenue")} value={`¥${stats.summary.total_revenue.toLocaleString()}`} icon={DollarSign} trend="+8.2%" up />
+        <StatCard title={t("dashboard.customers")} value={stats.summary.total_customers.toLocaleString()} icon={Users} trend="+3.1%" up />
+        <StatCard title={t("dashboard.todayOrders")} value={stats.summary.today_orders.toString()} icon={TrendingUp} trend="-2.4%" up={false} />
       </div>
 
-      {/* 待处理事项 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">待处理工单</p>
-              <p className="text-3xl font-bold text-yellow-600">
-                {stats.summary.pending_tickets}
-              </p>
-            </div>
-            <div className="text-4xl">🎫</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">待处理退款</p>
-              <p className="text-3xl font-bold text-red-600">
-                {stats.summary.pending_refunds}
-              </p>
-            </div>
-            <div className="text-4xl">💸</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">平均订单金额</p>
-              <p className="text-3xl font-bold text-blue-600">
-                ¥{stats.summary.avg_order_amount.toLocaleString()}
-              </p>
-            </div>
-            <div className="text-4xl">📊</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">客户满意度</p>
-              <p className="text-3xl font-bold text-green-600">
-                {stats.summary.avg_rating.toFixed(1)} ⭐
-              </p>
-            </div>
-            <div className="text-4xl">😊</div>
-          </div>
-        </div>
+      <div className="grid grid-cols-4 gap-3 mb-4">
+        <MiniCard title={t("dashboard.pendingTickets")} value={stats.summary.pending_tickets} icon={Clock} />
+        <MiniCard title={t("dashboard.pendingRefunds")} value={stats.summary.pending_refunds} icon={RotateCcw} />
+        <MiniCard title={t("dashboard.avgOrderAmount")} value={`¥${stats.summary.avg_order_amount.toLocaleString()}`} icon={BarChart3} />
+        <MiniCard title={t("dashboard.customerRating")} value={stats.summary.avg_rating.toFixed(1)} icon={Star} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 订单状态分布 */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold text-gray-900">订单状态分布</h2>
-          </div>
-          <div className="p-6">
-            <div className="space-y-4">
-              {Object.entries(stats.order_status_distribution).map(([status, count]) => (
-                <div key={status} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[status] || "bg-gray-100 text-gray-800"}`}>
-                      {statusLabels[status] || status}
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full"
-                        style={{
-                          width: `${(count / stats.summary.total_orders) * 100}%`,
-                        }}
-                      ></div>
-                    </div>
-                    <span className="font-medium text-gray-900">{count}</span>
-                  </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
+          <h2 className="text-xs font-bold text-zinc-200 mb-3">{t("dashboard.orderStatus")}</h2>
+          <div className="space-y-2.5">
+            {Object.entries(stats.order_status_distribution).map(([status, count]) => {
+              const s = statusStyles[status] || { text: "text-zinc-400", bar: "bg-zinc-500" };
+              const pct = (count / stats.summary.total_orders) * 100;
+              return (
+                <div key={status} className="flex items-center gap-3">
+                  <span className={`text-[11px] font-medium ${s.text} min-w-[60px]`}>{t(`orders.status${status.charAt(0).toUpperCase() + status.slice(1)}`)}</span>
+                  <div className="flex-1 bg-zinc-800 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${s.bar}`} style={{ width: `${pct}%` }} /></div>
+                  <span className="text-xs font-semibold text-zinc-300 w-8 text-right">{count}</span>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
-
-        {/* 热销商品 */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b">
-            <h2 className="text-lg font-semibold text-gray-900">热销商品 Top 5</h2>
-          </div>
-          <div className="p-6">
-            <div className="space-y-4">
-              {stats.top_products.map((product, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
-                >
-                  <div className="flex items-center">
-                    <span className="text-2xl mr-3">
-                      {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : "📦"}
-                    </span>
-                    <div>
-                      <p className="font-medium text-gray-900">{product.name}</p>
-                      <p className="text-sm text-gray-600">{product.quantity} 件</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium text-gray-900">
-                      ¥{product.amount.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
+          <h2 className="text-xs font-bold text-zinc-200 mb-3">{t("dashboard.topProducts")}</h2>
+          <div className="space-y-2">
+            {stats.top_products.map((p, i) => (
+              <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors">
+                <div className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${i === 0 ? "bg-amber-900/50 text-amber-400" : "bg-zinc-800 text-zinc-500"}`}>{i + 1}</div>
+                <div className="flex-1 min-w-0"><p className="text-xs font-semibold text-zinc-200 truncate">{p.name}</p><p className="text-[10px] text-zinc-600">{p.quantity} units</p></div>
+                <span className="text-xs font-bold text-zinc-200">¥{p.amount.toLocaleString()}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -227,37 +82,26 @@ export function DashboardPage() {
   );
 }
 
-function StatCard({
-  title,
-  value,
-  icon,
-  color,
-}: {
-  title: string;
-  value: string | number;
-  icon: string;
-  color: string;
-}) {
-  const colorClasses: Record<string, string> = {
-    blue: "bg-blue-50 border-blue-200",
-    green: "bg-green-50 border-green-200",
-    purple: "bg-purple-50 border-purple-200",
-    orange: "bg-orange-50 border-orange-200",
-  };
-
+function StatCard({ title, value, icon: Icon, trend, up }: { title: string; value: string; icon: typeof Package; trend: string; up: boolean }) {
   return (
-    <div
-      className={`rounded-lg shadow p-6 border ${
-        colorClasses[color] || "bg-white border-gray-200"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
+    <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4 hover:border-zinc-700 transition-colors">
+      <div className="flex items-start justify-between mb-3">
+        <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center"><Icon className="w-4 h-4 text-zinc-500" /></div>
+        <div className={`flex items-center gap-0.5 text-[10px] font-medium ${up ? "text-emerald-400" : "text-red-400"}`}>
+          {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}{trend}
         </div>
-        <div className="text-4xl">{icon}</div>
       </div>
+      <p className="text-xl font-bold text-zinc-100">{value}</p>
+      <p className="text-[10px] text-zinc-500 mt-0.5">{title}</p>
+    </div>
+  );
+}
+
+function MiniCard({ title, value, icon: Icon }: { title: string; value: string | number; icon: typeof Clock }) {
+  return (
+    <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-3">
+      <div className="flex items-center gap-2"><Icon className="w-3.5 h-3.5 text-zinc-600" /><p className="text-[10px] text-zinc-500">{title}</p></div>
+      <p className="text-base font-bold text-zinc-100 mt-1">{value}</p>
     </div>
   );
 }
