@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import threading
 from datetime import datetime
 from typing import Any
@@ -51,7 +52,9 @@ class ApprovalQueue:
     def _get_redis(self) -> Any:
         if self._redis_client is None:
             import redis.asyncio as redis
+
             from backend.app.core.config.settings import get_settings
+
             settings = get_settings()
             self._redis_client = redis.from_url(
                 settings.redis_url,
@@ -91,12 +94,21 @@ class ApprovalQueue:
         )
 
     def _persist_background(self, item: ApprovalItem) -> None:
-        import asyncio
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._persist(item))
+            if loop.is_closed():
+                return
+            task = loop.create_task(self._persist(item))
+            task.add_done_callback(self._handle_persist_error_callback)
         except RuntimeError:
-            asyncio.create_task(self._persist(item))
+            return
+        except Exception:
+            return
+
+    def _handle_persist_error_callback(self, task: asyncio.Task) -> None:
+        try:
+            if task.exc():
+                logger.warning("approval_persist_failed", error=str(task.exc()))
         except Exception:
             pass
 
@@ -118,10 +130,7 @@ class ApprovalQueue:
         return [item for item in self._queue.values() if item.status == "pending"]
 
     def get_by_conversation(self, conversation_id: str) -> list[ApprovalItem]:
-        return [
-            item for item in self._queue.values()
-            if item.conversation_id == conversation_id
-        ]
+        return [item for item in self._queue.values() if item.conversation_id == conversation_id]
 
     def approve(self, approval_id: str, resolved_by: str, comment: str = "") -> ApprovalItem | None:
         with self._lock:
