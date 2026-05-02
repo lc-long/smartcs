@@ -154,19 +154,15 @@ async def process_refund(order_no: str, amount: float, reason: str) -> str:
                 reason=reason,
             )
 
-            # 根据审批级别处理
+            # 所有退款都先标记为pending，由HITL审批后才真正批准
+            # HITL queue是唯一的审批机制
+            initial_status = "pending"
             if refund_request.required_approval.value == "agent":
-                # 客服可直接批准
-                workflow.approve(refund_request, approver="system_agent", comment="客服直接批准")
-                initial_status = "approved"
-                message = f"退款申请已批准（客服直接处理），金额: ¥{amount}，预计3-5个工作日到账"
+                message = f"退款申请已提交（客服直接处理），金额: ¥{amount}，正在等待系统确认"
+            elif refund_request.required_approval.value == "supervisor":
+                message = f"退款申请已提交，需要主管审批（金额: ¥{amount}），预计1-2个工作日完成审批"
             else:
-                # 需要主管或财务审批
-                initial_status = "pending"
-                if refund_request.required_approval.value == "supervisor":
-                    message = f"退款申请已提交，需要主管审批（金额: ¥{amount}），预计1-2个工作日完成审批"
-                else:
-                    message = f"退款申请已提交，需要财务审批（金额: ¥{amount}），预计3-5个工作日完成审批"
+                message = f"退款申请已提交，需要财务审批（金额: ¥{amount}），预计3-5个工作日完成审批"
 
             # 创建退款记录
             refund_no = refund_request.id

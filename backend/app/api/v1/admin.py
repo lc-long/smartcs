@@ -55,6 +55,34 @@ async def decide_approval(approval_id: str, request: ApprovalDecisionRequest) ->
     if not item:
         raise HTTPException(status_code=404, detail="Approval not found or already resolved")
 
+    # 如果是退款审批，需要更新Refund记录状态
+    if item.approval_type == "refund_approval":
+        from backend.app.models.db.ecommerce import Refund
+        from backend.app.core.database import get_session_factory
+        from sqlalchemy import select
+        from datetime import datetime
+
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                result = await session.execute(
+                    select(Refund).where(
+                        Refund.customer_id == item.customer_id,
+                        Refund.status == "pending"
+                    ).order_by(Refund.created_at.desc())
+                )
+                refund = result.scalar_one_or_none()
+                if refund:
+                    refund.status = "approved" if request.decision == "approve" else "rejected"
+                    refund.approved_by = "admin"
+                    refund.approved_at = datetime.now()
+                    if request.comment and request.decision == "reject":
+                        refund.rejection_reason = request.comment
+                    await session.commit()
+                    logger.info("refund_status_updated", refund_no=refund.refund_no, status=refund.status)
+        except Exception as e:
+            logger.warning("failed_to_update_refund_status", error=str(e))
+
     await manager.send_event(item.conversation_id, {
         "type": "approval_result",
         "approval_id": approval_id,
