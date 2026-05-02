@@ -82,7 +82,12 @@ async def handle_websocket(
 
             await memory.add_message(conversation_id, HumanMessage(content=content))
             history = await memory.get_messages(conversation_id)
-            messages = [HumanMessage(content=entry["content"]) for entry in history]
+            messages = []
+            for entry in history:
+                if entry.get("role") == "assistant":
+                    messages.append(AIMessage(content=entry["content"]))
+                else:
+                    messages.append(HumanMessage(content=entry["content"]))
 
             workflow = get_workflow()
 
