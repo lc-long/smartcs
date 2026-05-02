@@ -9,7 +9,7 @@ from sqlalchemy import func, select, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.v1.auth import get_current_user, require_role
-from backend.app.core.database import get_session
+from backend.app.core.database import get_db_session
 from backend.app.models.db.ecommerce import (
     Customer,
     CustomerFeedback,
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 @router.get("/dashboard")
 async def get_dashboard_stats(
     current_user: User = Depends(require_role(["admin", "agent"])),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """获取仪表盘统计数据"""
     try:
@@ -159,7 +159,7 @@ async def get_dashboard_stats(
 async def get_agent_performance(
     days: int = 30,
     current_user: User = Depends(require_role(["admin"])),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """获取客服绩效统计"""
     try:
@@ -266,7 +266,7 @@ async def get_agent_performance(
 async def get_customer_satisfaction(
     days: int = 30,
     current_user: User = Depends(require_role(["admin", "agent"])),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """获取客户满意度统计"""
     try:
@@ -367,7 +367,7 @@ async def get_customer_satisfaction(
 @router.get("/products/analytics")
 async def get_product_analytics(
     current_user: User = Depends(require_role(["admin", "agent"])),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """获取商品分析数据"""
     try:
@@ -461,7 +461,7 @@ async def get_product_analytics(
 @router.get("/logistics")
 async def get_logistics_stats(
     current_user: User = Depends(require_role(["admin", "agent"])),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """获取物流统计数据"""
     try:
