@@ -157,7 +157,7 @@ class TestCustomerServiceWorkflow:
     async def test_workflow_routes_to_billing(self, mock_llm_provider: LLMProvider):
         """测试：账单查询路由到 billing agent"""
         mock_llm = AsyncMock(spec=BaseChatModel)
-        mock_response = AIMessage(content="{"intent": "billing", "confidence": 0.9, "reasoning": "test"}")
+        mock_response = AIMessage(content='{"intent": "billing", "confidence": 0.9, "reasoning": "test"}')
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
         mock_llm_provider.get_llm.return_value = mock_llm
 
