@@ -1,6 +1,7 @@
 import { Routes, Route, Link, useLocation, Navigate, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import { LoginPage } from "./pages/LoginPage";
 import ChatPage from "./pages/ChatPage";
 import AdminPage from "./pages/AdminPage";
@@ -14,7 +15,7 @@ import { LogisticsPage } from "./pages/LogisticsPage";
 import { FeedbackPage } from "./pages/FeedbackPage";
 import {
   MessageSquare, BarChart3, Truck, SmilePlus, ShoppingBag, Package,
-  Users, Wallet, BookOpen, ShieldCheck, LogOut, Zap, Globe,
+  Users, Wallet, BookOpen, ShieldCheck, LogOut, Zap, Globe, Sun, Moon,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -24,7 +25,7 @@ function ProtectedRoute({ requiredRole }: { requiredRole?: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-zinc-950">
+      <div className="flex items-center justify-center h-screen" style={{ background: "var(--bg-app)" }}>
         <div className="w-6 h-6 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin" />
       </div>
     );
@@ -36,11 +37,11 @@ function ProtectedRoute({ requiredRole }: { requiredRole?: string }) {
     const h = { admin: 3, agent: 2, viewer: 1 };
     if ((h[user.role] || 0) < (h[requiredRole as keyof typeof h] || 0)) {
       return (
-        <div className="flex items-center justify-center h-screen bg-zinc-950">
+        <div className="flex items-center justify-center h-screen" style={{ background: "var(--bg-app)" }}>
           <div className="text-center">
-            <ShieldCheck className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
-            <p className="text-sm font-medium text-zinc-300">{t("auth.accessDenied")}</p>
-            <p className="text-xs text-zinc-500 mt-1">{t("auth.accessDeniedDesc")}</p>
+            <ShieldCheck className="w-8 h-8 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
+            <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>{t("auth.accessDenied")}</p>
+            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{t("auth.accessDeniedDesc")}</p>
           </div>
         </div>
       );
@@ -59,17 +60,20 @@ function LanguageSwitcher() {
   return (
     <div className="relative">
       <button onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors text-xs cursor-pointer w-full">
+        className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs cursor-pointer w-full transition-colors"
+        style={{ color: "var(--text-muted)" }}>
         <Globe className="w-3.5 h-3.5" />
         <span>{current.label}</span>
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-1 w-28 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
+          <div className="absolute bottom-full left-0 mb-1 w-28 rounded-lg shadow-xl z-50 py-1"
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
             {langs.map((lang) => (
               <button key={lang.code} onClick={() => { i18n.changeLanguage(lang.code); setOpen(false); }}
-                className={`w-full px-3 py-1.5 text-left text-xs cursor-pointer transition-colors ${i18n.language === lang.code ? "text-indigo-400" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"}`}>
+                className="w-full px-3 py-1.5 text-left text-xs cursor-pointer transition-colors"
+                style={{ color: i18n.language === lang.code ? "var(--accent)" : "var(--text-secondary)" }}>
                 {lang.label}
               </button>
             ))}
@@ -77,6 +81,18 @@ function LanguageSwitcher() {
         </>
       )}
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <button onClick={toggleTheme}
+      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs cursor-pointer w-full transition-colors"
+      style={{ color: "var(--text-muted)" }}>
+      {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+      <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+    </button>
   );
 }
 
@@ -107,29 +123,33 @@ function AppLayout() {
   const roleLabels: Record<string, string> = { admin: "Admin", agent: "Agent", viewer: "Viewer" };
 
   return (
-    <div className="flex h-screen bg-zinc-950 overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-[220px] bg-zinc-950 flex flex-col flex-shrink-0 border-r border-zinc-800/70">
-        <div className="h-14 flex items-center px-4 border-b border-zinc-800/50">
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-app)" }}>
+      <aside className="w-[220px] flex flex-col flex-shrink-0"
+        style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--sidebar-border)" }}>
+        <div className="h-14 flex items-center px-4" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--accent)" }}>
               <Zap className="w-4 h-4 text-white" />
             </div>
-            <h1 className="text-sm font-bold text-zinc-100 tracking-tight">SmartCS</h1>
+            <h1 className="text-sm font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>SmartCS</h1>
           </div>
         </div>
 
         <nav className="flex-1 overflow-y-auto py-3 px-2">
           {Object.entries(groups).map(([groupName, items]) => (
             <div key={groupName} className="mb-4">
-              <p className="px-2 mb-1 text-[10px] font-semibold text-zinc-600 uppercase tracking-widest">{groupName}</p>
+              <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-dim)" }}>{groupName}</p>
               {items.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
                 return (
                   <Link key={item.path} to={item.path}
-                    className={`group flex items-center gap-2.5 px-2 py-1.5 rounded-md mb-0.5 text-[13px] font-medium transition-all duration-100 cursor-pointer ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300"}`}>
-                    <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? "text-zinc-300" : "text-zinc-600 group-hover:text-zinc-500"}`} />
+                    className="group flex items-center gap-2.5 px-2 py-1.5 rounded-md mb-0.5 text-[13px] font-medium transition-all duration-100 cursor-pointer"
+                    style={{
+                      background: isActive ? "var(--bg-elevated)" : "transparent",
+                      color: isActive ? "var(--text-primary)" : "var(--text-muted)",
+                    }}>
+                    <Icon className="w-4 h-4 flex-shrink-0" style={{ color: isActive ? "var(--text-secondary)" : "var(--text-dim)" }} />
                     <span>{item.label}</span>
                   </Link>
                 );
@@ -138,25 +158,27 @@ function AppLayout() {
           ))}
         </nav>
 
-        <div className="border-t border-zinc-800/50 p-2 space-y-1">
+        <div className="p-2 space-y-1" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+          <ThemeToggle />
           <LanguageSwitcher />
           <div className="flex items-center gap-2.5 px-2 py-1.5">
-            <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-zinc-400">
+            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold"
+              style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
               {user?.username?.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-zinc-300 truncate">{user?.username}</p>
-              <p className="text-[10px] text-zinc-600">{roleLabels[user?.role || "viewer"]}</p>
+              <p className="text-xs font-medium truncate" style={{ color: "var(--text-secondary)" }}>{user?.username}</p>
+              <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>{roleLabels[user?.role || "viewer"]}</p>
             </div>
-            <button onClick={logout} className="p-1 rounded text-zinc-600 hover:text-red-400 transition-colors cursor-pointer" title="Sign out">
+            <button onClick={logout} className="p-1 rounded cursor-pointer transition-colors"
+              style={{ color: "var(--text-dim)" }} title="Sign out">
               <LogOut className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       </aside>
 
-      {/* Content */}
-      <main className="flex-1 overflow-auto bg-zinc-950">
+      <main className="flex-1 overflow-auto" style={{ background: "var(--bg-app)" }}>
         <Outlet />
       </main>
     </div>
@@ -165,28 +187,30 @@ function AppLayout() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<ProtectedRoute />}>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<ChatPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/products" element={<ProductsPage />} />
-            <Route path="/orders" element={<OrdersPage />} />
-            <Route path="/customers" element={<CustomersPage />} />
-            <Route path="/knowledge" element={<KnowledgePage />} />
-            <Route element={<ProtectedRoute requiredRole="agent" />}>
-              <Route path="/refunds" element={<RefundsPage />} />
-              <Route path="/logistics" element={<LogisticsPage />} />
-              <Route path="/feedback" element={<FeedbackPage />} />
-            </Route>
-            <Route element={<ProtectedRoute requiredRole="admin" />}>
-              <Route path="/admin" element={<AdminPage />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<ChatPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/products" element={<ProductsPage />} />
+              <Route path="/orders" element={<OrdersPage />} />
+              <Route path="/customers" element={<CustomersPage />} />
+              <Route path="/knowledge" element={<KnowledgePage />} />
+              <Route element={<ProtectedRoute requiredRole="agent" />}>
+                <Route path="/refunds" element={<RefundsPage />} />
+                <Route path="/logistics" element={<LogisticsPage />} />
+                <Route path="/feedback" element={<FeedbackPage />} />
+              </Route>
+              <Route element={<ProtectedRoute requiredRole="admin" />}>
+                <Route path="/admin" element={<AdminPage />} />
+              </Route>
             </Route>
           </Route>
-        </Route>
-      </Routes>
-    </AuthProvider>
+        </Routes>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

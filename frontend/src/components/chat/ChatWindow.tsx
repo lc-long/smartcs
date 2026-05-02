@@ -8,14 +8,6 @@ import MessageBubble from "./MessageBubble";
 import { Send, Package, CreditCard, RotateCcw, Wrench, FileText, Phone, Sparkles, Loader2 } from "lucide-react";
 
 const AGENT_LABELS: Record<string, string> = { billing: "billing", technical: "techSupport", refund: "refund", general: "general", escalation: "human", supervisor: "smartRouter" };
-const AGENT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  billing: { bg: "bg-emerald-950/50", text: "text-emerald-400", border: "border-emerald-800/50" },
-  technical: { bg: "bg-sky-950/50", text: "text-sky-400", border: "border-sky-800/50" },
-  refund: { bg: "bg-amber-950/50", text: "text-amber-400", border: "border-amber-800/50" },
-  general: { bg: "bg-violet-950/50", text: "text-violet-400", border: "border-violet-800/50" },
-  escalation: { bg: "bg-red-950/50", text: "text-red-400", border: "border-red-800/50" },
-  supervisor: { bg: "bg-zinc-800/50", text: "text-zinc-400", border: "border-zinc-700/50" },
-};
 
 export default function ChatWindow() {
   const { user } = useAuth();
@@ -59,45 +51,46 @@ export default function ChatWindow() {
     { label: t("chat.contact"), question: "What is your customer service number?", icon: Phone },
   ];
 
-  const agentInfo = currentAgent ? { label: t(`agent.${AGENT_LABELS[currentAgent] || "general"}`), colors: AGENT_COLORS[currentAgent] || AGENT_COLORS.general } : null;
+  const agentLabel = currentAgent ? t(`agent.${AGENT_LABELS[currentAgent] || "general"}`) : "";
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <header className="h-12 border-b border-zinc-800/50 px-5 flex items-center justify-between flex-shrink-0 bg-zinc-950">
+    <div className="flex flex-col h-full" style={{ background: "var(--bg-app)" }}>
+      <header className="h-12 px-5 flex items-center justify-between flex-shrink-0"
+        style={{ background: "var(--bg-app)", borderBottom: "1px solid var(--border-subtle)" }}>
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-indigo-400" />
-          <h1 className="text-sm font-semibold text-zinc-100">{t("chat.title")}</h1>
+          <Sparkles className="w-4 h-4" style={{ color: "var(--accent)" }} />
+          <h1 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{t("chat.title")}</h1>
           <div className="flex items-center gap-1 ml-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`} />
-            <span className="text-[11px] text-zinc-500">{connected ? t("chat.connected") : t("chat.connecting")}</span>
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: connected ? "var(--success)" : "var(--warning)" }} />
+            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{connected ? t("chat.connected") : t("chat.connecting")}</span>
           </div>
         </div>
-        {isProcessing && agentInfo && (
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border ${agentInfo.colors.bg} ${agentInfo.colors.text} ${agentInfo.colors.border}`}>
+        {isProcessing && agentLabel && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium"
+            style={{ background: "var(--badge-bg)", color: "var(--accent)", border: "1px solid var(--badge-border)" }}>
             <Loader2 className="w-3 h-3 animate-spin" />
-            {agentInfo.label} {t("chat.processing")}
+            {agentLabel} {t("chat.processing")}
           </div>
         )}
       </header>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center px-6">
-            <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center mb-4">
-              <Sparkles className="w-6 h-6 text-indigo-400" />
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ background: "var(--bg-elevated)" }}>
+              <Sparkles className="w-6 h-6" style={{ color: "var(--accent)" }} />
             </div>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-1.5">{t("chat.howCanIHelp")}</h2>
-            <p className="text-xs text-zinc-500 mb-6 text-center max-w-sm">{t("chat.helpDesc")}</p>
+            <h2 className="text-lg font-semibold mb-1.5" style={{ color: "var(--text-primary)" }}>{t("chat.howCanIHelp")}</h2>
+            <p className="text-xs mb-6 text-center max-w-sm" style={{ color: "var(--text-muted)" }}>{t("chat.helpDesc")}</p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-md w-full">
               {QUICK.map((q) => {
                 const Icon = q.icon;
                 return (
                   <button key={q.label} onClick={() => handleSend(q.question)}
-                    className="group flex items-center gap-2 p-2.5 rounded-lg border border-zinc-800 hover:border-indigo-600/50 hover:bg-zinc-800/60 transition-all duration-150 text-left cursor-pointer">
-                    <Icon className="w-3.5 h-3.5 text-zinc-500 group-hover:text-indigo-400 flex-shrink-0" />
-                    <span className="text-xs font-medium text-zinc-400 group-hover:text-zinc-200">{q.label}</span>
+                    className="group flex items-center gap-2 p-2.5 rounded-lg transition-all duration-150 text-left cursor-pointer"
+                    style={{ border: "1px solid var(--border)" }}>
+                    <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+                    <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{q.label}</span>
                   </button>
                 );
               })}
@@ -108,18 +101,18 @@ export default function ChatWindow() {
             {messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
             {isProcessing && (
               <div className="flex items-start gap-2.5 py-1.5 animate-fade-in">
-                <div className="w-7 h-7 rounded-md bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                  <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin" />
+                <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: "var(--bg-elevated)" }}>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: "var(--text-muted)" }} />
                 </div>
-                <div className="bg-zinc-900 border border-zinc-800 rounded-xl rounded-tl-sm px-3 py-2">
+                <div className="rounded-xl rounded-tl-sm px-3 py-2" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
                   <div className="flex items-center gap-1.5">
                     <div className="flex gap-0.5">
-                      <span className="w-1 h-1 bg-zinc-500 rounded-full typing-dot" />
-                      <span className="w-1 h-1 bg-zinc-500 rounded-full typing-dot" />
-                      <span className="w-1 h-1 bg-zinc-500 rounded-full typing-dot" />
+                      <span className="w-1 h-1 rounded-full typing-dot" style={{ background: "var(--text-muted)" }} />
+                      <span className="w-1 h-1 rounded-full typing-dot" style={{ background: "var(--text-muted)" }} />
+                      <span className="w-1 h-1 rounded-full typing-dot" style={{ background: "var(--text-muted)" }} />
                     </div>
-                    <span className="text-[11px] text-zinc-500">
-                      {currentAgent === "supervisor" ? t("chat.coordinating") : agentInfo ? `${agentInfo.label} ${t("chat.processing")}` : t("chat.thinking")}
+                    <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      {currentAgent === "supervisor" ? t("chat.coordinating") : agentLabel ? `${agentLabel} ${t("chat.processing")}` : t("chat.thinking")}
                     </span>
                   </div>
                 </div>
@@ -130,16 +123,17 @@ export default function ChatWindow() {
         )}
       </div>
 
-      {/* Input */}
-      <div className="border-t border-zinc-800/50 p-3 flex-shrink-0 bg-zinc-950">
+      <div className="p-3 flex-shrink-0" style={{ background: "var(--bg-app)", borderTop: "1px solid var(--border-subtle)" }}>
         <div className="flex gap-2 items-center max-w-4xl mx-auto">
           <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
             placeholder={t("chat.typeMessage")}
-            className="flex-1 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600/50 transition-all placeholder:text-zinc-600 bg-zinc-900 text-zinc-100"
+            className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 transition-all"
+            style={{ background: "var(--input-bg)", border: "1px solid var(--input-border)", color: "var(--text-primary)" }}
             disabled={isProcessing} />
           <button onClick={() => handleSend()} disabled={isProcessing || !input.trim()}
-            className="p-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer flex-shrink-0">
+            className="p-2 rounded-lg text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer flex-shrink-0"
+            style={{ background: "var(--accent)" }}>
             <Send className="w-4 h-4" />
           </button>
         </div>
