@@ -26,8 +26,15 @@ SYSTEM_PROMPT = """你是一个意图分类器。分析用户消息，输出JSON
 - "退款"、"退货"、"申请退款"、"refund" → refund（明确要退款）
 - "查账单"、"发票"、"billing" → billing
 
+单意图检测：用户只表达一个意图时输出单条结果。
+多意图检测：用户同时表达多个意图时，使用"intents"数组返回多个意图。
+- "我想退款，另外帮我查下账单" → ["refund", "billing"]
+- "这个手表坏了，要退款，建个工单" → ["technical", "refund"]
+- "查下积分，顺便推荐个产品" → ["general"]（积分查询和推荐都在general范围内）
+
 输出格式（仅输出JSON，不要其他内容）：
-{"intent": "billing", "confidence": 0.9, "reasoning": "理由"}"""
+单意图：{"intent": "billing", "confidence": 0.9, "reasoning": "理由"}
+多意图：{"intents": ["billing", "refund"], "confidence": 0.85, "reasoning": "检测到多个意图", "is_multi": true}"""
 
 INTENT_KEYWORDS = {
     IntentType.ESCALATION: ["转人工", "找人工", "真人客服", "人工服务", "转接人工", "transfer to human", "human agent"],
@@ -133,13 +140,23 @@ class RouterAgent(BaseAgent):
         if "reason" in data and "reasoning" not in data:
             data["reasoning"] = data.pop("reason")
 
+        # Check for multi-intent
+        if "intents" in data:
+            intents = data["intents"]
+            if isinstance(intents, list) and len(intents) > 1:
+                primary_intent_raw = intents[0].lower().strip()
+                primary_intent = self._map_intent(primary_intent_raw)
+                return RouteDecision(
+                    intent=primary_intent,
+                    confidence=float(data.get("confidence", 0.8)),
+                    reasoning=str(data.get("reasoning", f"检测到{len(intents)}个意图: {', '.join(intents)}")),
+                    suggested_agent=self.get_agent_for_intent(primary_intent),
+                    is_multi_intent=True,
+                    all_intents=[self._map_intent(i.lower().strip()) for i in intents],
+                )
+
         intent_raw = str(data.get("intent", "")).lower().strip()
-        intent = INTENT_MAPPING.get(intent_raw)
-        if intent is None:
-            for key, val in INTENT_MAPPING.items():
-                if key in intent_raw or intent_raw in key:
-                    intent = val
-                    break
+        intent = self._map_intent(intent_raw)
         if intent is None:
             intent = IntentType.GENERAL
 
@@ -149,6 +166,14 @@ class RouterAgent(BaseAgent):
             reasoning=str(data.get("reasoning", "")),
             suggested_agent=self.get_agent_for_intent(intent),
         )
+
+    def _map_intent(self, intent_raw: str) -> IntentType | None:
+        if intent_raw in INTENT_MAPPING:
+            return INTENT_MAPPING[intent_raw]
+        for key, val in INTENT_MAPPING.items():
+            if key in intent_raw or intent_raw in key:
+                return val
+        return None
 
     def get_agent_for_intent(self, intent: IntentType) -> str:
         mapping = {

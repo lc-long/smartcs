@@ -43,6 +43,8 @@ class RouteDecision(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0, description="置信度")
     reasoning: str = Field(..., description="分类理由")
     suggested_agent: str = Field(..., description="建议的Agent名称")
+    is_multi_intent: bool = Field(False, description="是否检测到多意图")
+    all_intents: list[IntentType] = Field(default_factory=list, description="所有检测到的意图")
 
 
 class ChatMessage(BaseModel):
