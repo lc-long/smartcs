@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 from dataclasses import dataclass, field
@@ -10,6 +11,8 @@ import structlog
 from langchain_core.messages import BaseMessage
 
 logger = structlog.get_logger()
+
+WORKING_MEMORY_KEY_PREFIX = "smartcs:memory:"
 
 
 @dataclass
@@ -144,14 +147,33 @@ class WorkingMemory:
 
 
 class WorkingMemoryStore:
-    """工作记忆存储 - 支持LRU清理和TTL过期"""
+    """工作记忆存储 - 支持LRU清理和TTL过期，可选Redis持久化"""
 
-    def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600):
+    def __init__(
+        self,
+        max_size: int = 1000,
+        ttl_seconds: int = 3600,
+        use_redis: bool = False,
+    ):
         self._memories: dict[str, WorkingMemory] = {}
         self._max_size = max_size
         self._ttl_seconds = ttl_seconds
+        self._use_redis = use_redis
         self._lock = threading.Lock()
         self._cleanup_thread: threading.Thread | None = None
+        self._redis_client: Any = None
+
+    def _get_redis(self) -> Any:
+        if self._redis_client is None:
+            import redis.asyncio as redis
+            from backend.app.core.config.settings import get_settings
+            settings = get_settings()
+            self._redis_client = redis.from_url(
+                settings.redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+        return self._redis_client
 
     def _start_cleanup_thread(self) -> None:
         """启动后台清理线程"""
@@ -196,6 +218,35 @@ class WorkingMemoryStore:
                 del self._memories[oldest_key]
                 logger.info("memory_evicted", conversation_id=oldest_key)
 
+    async def _persist_to_redis(self, memory: WorkingMemory) -> None:
+        """异步持久化到Redis"""
+        if not self._use_redis:
+            return
+        try:
+            client = self._get_redis()
+            key = f"{WORKING_MEMORY_KEY_PREFIX}{memory.conversation_id}"
+            await client.set(
+                key,
+                json.dumps(memory.to_dict()),
+                ex=self._ttl_seconds,
+            )
+        except Exception as e:
+            logger.warning("memory_redis_persist_failed", conversation_id=memory.conversation_id, error=str(e))
+
+    async def _load_from_redis(self, conversation_id: str) -> WorkingMemory | None:
+        """从Redis加载"""
+        if not self._use_redis:
+            return None
+        try:
+            client = self._get_redis()
+            key = f"{WORKING_MEMORY_KEY_PREFIX}{conversation_id}"
+            data = await client.get(key)
+            if data:
+                return WorkingMemory.from_dict(json.loads(data))
+        except Exception as e:
+            logger.warning("memory_redis_load_failed", conversation_id=conversation_id, error=str(e))
+        return None
+
     def create(
         self,
         conversation_id: str,
@@ -212,6 +263,8 @@ class WorkingMemoryStore:
             )
             self._memories[conversation_id] = memory
             self._start_cleanup_thread()
+            if self._use_redis:
+                asyncio.create_task(self._persist_to_redis(memory))
             return memory
 
     def get(self, conversation_id: str) -> WorkingMemory | None:
@@ -226,11 +279,24 @@ class WorkingMemoryStore:
         with self._lock:
             memory.touch()
             self._memories[conversation_id] = memory
+            if self._use_redis:
+                asyncio.create_task(self._persist_to_redis(memory))
 
     def delete(self, conversation_id: str) -> None:
         """删除工作记忆"""
         with self._lock:
             self._memories.pop(conversation_id, None)
+            if self._use_redis:
+                asyncio.create_task(self._delete_from_redis(conversation_id))
+
+    async def _delete_from_redis(self, conversation_id: str) -> None:
+        """从Redis删除"""
+        try:
+            client = self._get_redis()
+            key = f"{WORKING_MEMORY_KEY_PREFIX}{conversation_id}"
+            await client.delete(key)
+        except Exception as e:
+            logger.warning("memory_redis_delete_failed", conversation_id=conversation_id, error=str(e))
 
     def list_all(self) -> list[str]:
         """列出所有会话ID"""
@@ -253,5 +319,6 @@ def get_working_memory_store() -> WorkingMemoryStore:
         _store = WorkingMemoryStore(
             max_size=settings.working_memory_max_size,
             ttl_seconds=settings.working_memory_ttl_seconds,
+            use_redis=settings.app_env.value == "production" if hasattr(settings.app_env, "value") else False,
         )
     return _store
