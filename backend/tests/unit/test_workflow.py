@@ -120,7 +120,7 @@ class TestRouterAgentClassification:
         mock_provider.get_llm.return_value = mock_llm
 
         router = RouterAgent(mock_provider)
-        messages = [HumanMessage(content="我想退款，另外帮我查下账单")]
+        messages = [HumanMessage(content="这个手表坏了，要退款，建个工单")]  # 无关键词匹配
         result = await router.classify_intent(messages)
 
         assert result.is_multi_intent is True
@@ -208,7 +208,7 @@ class TestCustomerServiceWorkflow:
 
     @pytest.mark.asyncio
     async def test_no_hitl_for_low_value_refund(self, mock_llm_provider: LLMProvider):
-        """测试：低价值退款不触发 HITL"""
+        """测试：低价值退款不触发 HITL（无高风险工具时返回空）"""
         workflow = CustomerServiceWorkflow(llm_provider=mock_llm_provider)
 
         state: CustomerServiceState = {
@@ -220,7 +220,7 @@ class TestCustomerServiceWorkflow:
             "routing_reasoning": "test",
             "active_agent": "refund",
             "agent_response": "退款处理中...",
-            "tools_called": ["order_lookup"],
+            "tools_called": ["order_lookup"],  # 无高风险工具
             "needs_human": False,
             "human_approved": False,
             "human_comment": None,
@@ -229,4 +229,4 @@ class TestCustomerServiceWorkflow:
         }
 
         result = await workflow._hitl_check_node(state)
-        assert result.get("needs_human") is False
+        assert result == {}  # 无高风险工具时返回空dict
