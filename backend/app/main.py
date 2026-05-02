@@ -40,6 +40,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning("database_init_failed", error=str(e))
         logger.info("running_without_database")
 
+    from backend.app.services.approval_queue import get_approval_queue
+
+    try:
+        await get_approval_queue()._async_init()
+        logger.info("approval_queue_initialized")
+    except Exception as e:
+        logger.warning("approval_queue_init_failed", error=str(e))
+
     yield
 
     try:
