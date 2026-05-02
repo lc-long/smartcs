@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     minimax_api_key: str = ""
     minimax_base_url: str = "https://api.minimax.chat/v1"
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
 
     # Model Configuration
     llm_provider: str = "minimax"

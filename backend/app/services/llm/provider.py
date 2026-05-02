@@ -48,6 +48,8 @@ class TokenCounter:
         "gpt-4o-mini": {"prompt": 0.00015, "completion": 0.0006},
         "claude-3-5-sonnet": {"prompt": 0.003, "completion": 0.015},
         "claude-3-5-haiku": {"prompt": 0.0008, "completion": 0.004},
+        "deepseek-chat": {"prompt": 0.00014, "completion": 0.00028},
+        "deepseek-coder": {"prompt": 0.00014, "completion": 0.00028},
     }
 
     def __init__(self, max_history: int = 1000):
@@ -177,6 +179,8 @@ class LLMProvider:
 
         if provider == "minimax":
             return self._create_minimax_llm(model_name, temperature)
+        elif provider == "deepseek" or model_name.startswith("deepseek"):
+            return self._create_deepseek_llm(model_name, temperature)
         elif provider == "anthropic" or model_name.startswith("claude"):
             return self._create_anthropic_llm(model_name, temperature)
         else:
@@ -191,6 +195,17 @@ class LLMProvider:
             temperature=temperature,
             api_key=self._settings.minimax_api_key,
             base_url=self._settings.minimax_base_url,
+        )
+
+    def _create_deepseek_llm(self, model_name: str, temperature: float) -> BaseChatModel:
+        from langchain_openai import ChatOpenAI
+
+        logger.info("creating_deepseek_llm", model=model_name, temperature=temperature)
+        return ChatOpenAI(
+            model=model_name,
+            temperature=temperature,
+            api_key=self._settings.deepseek_api_key,
+            base_url=self._settings.deepseek_base_url,
         )
 
     def _create_openai_llm(self, model_name: str, temperature: float) -> BaseChatModel:
