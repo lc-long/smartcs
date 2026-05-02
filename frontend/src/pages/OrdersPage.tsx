@@ -1,191 +1,72 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../services/api";
+import { X, ChevronLeft, ChevronRight } from "lucide-react";
 
-interface Order {
-  id: string;
-  order_no: string;
-  customer_id: string;
-  status: string;
-  total_amount: number;
-  shipping_address: string;
-  notes: string | null;
-  items: Array<{
-    product_name: string;
-    quantity: number;
-    unit_price: number;
-    subtotal: number;
-  }>;
-  created_at: string;
-}
+interface Order { id: string; order_no: string; customer_id: string; status: string; total_amount: number; shipping_address: string; notes: string | null; items: Array<{ product_name: string; quantity: number; unit_price: number; subtotal: number }>; created_at: string; }
 
-const statusColors: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-800",
-  processing: "bg-blue-100 text-blue-800",
-  shipped: "bg-purple-100 text-purple-800",
-  delivered: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800",
-};
-
-const statusLabels: Record<string, string> = {
-  pending: "待处理",
-  processing: "处理中",
-  shipped: "已发货",
-  delivered: "已送达",
-  cancelled: "已取消",
+const statusStyles: Record<string, string> = {
+  pending: "text-amber-400", processing: "text-sky-400", shipped: "text-violet-400", delivered: "text-emerald-400", cancelled: "text-red-400",
 };
 
 export function OrdersPage() {
+  const { t } = useTranslation();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [status, setStatus] = useState<string>("");
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [status, setStatus] = useState("");
+  const [selected, setSelected] = useState<Order | null>(null);
 
-  useEffect(() => {
-    loadOrders();
-  }, [page, status]);
+  useEffect(() => { loadOrders(); }, [page, status]);
 
   async function loadOrders() {
-    try {
-      setLoading(true);
-      const data = await api.getOrders({
-        page,
-        page_size: 20,
-        status: status || undefined,
-      });
-      setOrders(data.items);
-      setTotal(data.total);
-    } catch (error) {
-      console.error("Failed to load orders:", error);
-    } finally {
-      setLoading(false);
-    }
+    try { setLoading(true); const data = await api.getOrders({ page, page_size: 20, status: status || undefined }); setOrders(data.items); setTotal(data.total); }
+    catch (e) { console.error(e); } finally { setLoading(false); }
   }
 
-  async function handleStatusChange(orderId: string, newStatus: string) {
-    try {
-      await api.updateOrder(orderId, { status: newStatus });
-      loadOrders();
-    } catch (error) {
-      console.error("Failed to update order:", error);
-    }
+  async function handleStatusChange(id: string, s: string) {
+    try { await api.updateOrder(id, { status: s }); loadOrders(); } catch (e) { console.error(e); }
   }
+
+  const opts = ["pending", "processing", "shipped", "delivered", "cancelled"];
 
   return (
-    <div className="p-6 bg-gray-50 min-h-full">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">订单管理</h1>
-        <p className="text-gray-600">查看和管理所有订单</p>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="mb-5">
+        <h1 className="text-lg font-bold text-zinc-100">{t("orders.title")}</h1>
+        <p className="text-xs text-zinc-500 mt-0.5">{t("orders.subtitle")}</p>
       </div>
-
-      {/* 筛选栏 */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="flex flex-wrap gap-4">
-          <select
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value);
-              setPage(1);
-            }}
-            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">所有状态</option>
-            <option value="pending">待处理</option>
-            <option value="processing">处理中</option>
-            <option value="shipped">已发货</option>
-            <option value="delivered">已送达</option>
-            <option value="cancelled">已取消</option>
-          </select>
-          <div className="flex-1"></div>
-          <span className="text-gray-600">共 {total} 个订单</span>
-        </div>
+      <div className="flex items-center gap-3 mb-4">
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+          className="px-3 py-1.5 border border-zinc-800 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600/50 bg-zinc-900 text-zinc-300 cursor-pointer">
+          <option value="">{t("orders.allStatus")}</option>
+          {opts.map((s) => <option key={s} value={s}>{t(`orders.status${s.charAt(0).toUpperCase() + s.slice(1)}`)}</option>)}
+        </select>
+        <div className="flex-1" />
+        <span className="text-[11px] text-zinc-500">{t("orders.totalOrders", { count: total })}</span>
       </div>
-
-      {/* 订单列表 */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center p-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-          </div>
-        ) : (
+      <div className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+        {loading ? <div className="flex items-center justify-center p-12"><div className="w-6 h-6 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin" /></div> : (
           <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  订单号
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  客户
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  商品
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  金额
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  状态
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  时间
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {orders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <button
-                      onClick={() => setSelectedOrder(order)}
-                      className="font-medium text-blue-600 hover:underline"
-                    >
-                      {order.order_no}
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {order.customer_id}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm">
-                      {order.items.map((item, i) => (
-                        <p key={i} className="text-gray-600">
-                          {item.product_name} x{item.quantity}
-                        </p>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 font-medium text-gray-900">
-                    ¥{order.total_amount.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`px-2 py-1 text-xs rounded-full ${
-                        statusColors[order.status] || "bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      {statusLabels[order.status] || order.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {new Date(order.created_at).toLocaleDateString("zh-CN")}
-                  </td>
-                  <td className="px-6 py-4">
-                    <select
-                      value={order.status}
-                      onChange={(e) =>
-                        handleStatusChange(order.id, e.target.value)
-                      }
-                      className="px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="pending">待处理</option>
-                      <option value="processing">处理中</option>
-                      <option value="shipped">已发货</option>
-                      <option value="delivered">已送达</option>
-                      <option value="cancelled">已取消</option>
+            <thead><tr className="border-b border-zinc-800">
+              {[t("orders.orderNo"), t("orders.customer"), t("orders.products"), t("orders.amount"), t("orders.status"), t("orders.time"), t("orders.actions")].map((h) => (
+                <th key={h} className="px-4 py-2.5 text-left text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">{h}</th>
+              ))}
+            </tr></thead>
+            <tbody className="divide-y divide-zinc-800/50">
+              {orders.map((o) => (
+                <tr key={o.id} className="hover:bg-zinc-800/30 transition-colors">
+                  <td className="px-4 py-3"><button onClick={() => setSelected(o)} className="text-xs font-medium text-indigo-400 hover:underline cursor-pointer">{o.order_no}</button></td>
+                  <td className="px-4 py-3 text-xs text-zinc-400">{o.customer_id}</td>
+                  <td className="px-4 py-3 text-xs text-zinc-400">{o.items.map((i, idx) => <p key={idx}>{i.product_name} x{i.quantity}</p>)}</td>
+                  <td className="px-4 py-3 text-xs font-semibold text-zinc-200">¥{o.total_amount.toLocaleString()}</td>
+                  <td className="px-4 py-3"><span className={`text-[11px] font-medium ${statusStyles[o.status] || "text-zinc-400"}`}>{t(`orders.status${o.status.charAt(0).toUpperCase() + o.status.slice(1)}`)}</span></td>
+                  <td className="px-4 py-3 text-[11px] text-zinc-500">{new Date(o.created_at).toLocaleDateString("zh-CN")}</td>
+                  <td className="px-4 py-3">
+                    <select value={o.status} onChange={(e) => handleStatusChange(o.id, e.target.value)}
+                      className="px-2 py-1 border border-zinc-800 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500/30 bg-zinc-800 text-zinc-300 cursor-pointer">
+                      {opts.map((s) => <option key={s} value={s}>{t(`orders.status${s.charAt(0).toUpperCase() + s.slice(1)}`)}</option>)}
                     </select>
                   </td>
                 </tr>
@@ -193,102 +74,36 @@ export function OrdersPage() {
             </tbody>
           </table>
         )}
-
-        {/* 分页 */}
-        <div className="px-6 py-4 bg-gray-50 border-t flex items-center justify-between">
-          <button
-            onClick={() => setPage(Math.max(1, page - 1))}
-            disabled={page === 1}
-            className="px-4 py-2 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-          >
-            上一页
-          </button>
-          <span className="text-gray-600">
-            第 {page} 页，共 {Math.ceil(total / 20)} 页
-          </span>
-          <button
-            onClick={() => setPage(page + 1)}
-            disabled={page * 20 >= total}
-            className="px-4 py-2 border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-          >
-            下一页
-          </button>
+        <div className="px-4 py-2.5 bg-zinc-950/50 border-t border-zinc-800 flex items-center justify-between">
+          <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
+            className="flex items-center gap-1 px-3 py-1 text-xs text-zinc-400 border border-zinc-800 rounded-lg disabled:opacity-30 hover:bg-zinc-800 transition-colors cursor-pointer disabled:cursor-not-allowed"><ChevronLeft className="w-3 h-3" />{t("orders.prevPage")}</button>
+          <span className="text-[11px] text-zinc-500">{t("orders.pageInfo", { current: page, total: Math.ceil(total / 20) })}</span>
+          <button onClick={() => setPage(page + 1)} disabled={page * 20 >= total}
+            className="flex items-center gap-1 px-3 py-1 text-xs text-zinc-400 border border-zinc-800 rounded-lg disabled:opacity-30 hover:bg-zinc-800 transition-colors cursor-pointer disabled:cursor-not-allowed">{t("orders.nextPage")}<ChevronRight className="w-3 h-3" /></button>
         </div>
       </div>
-
-      {/* 订单详情弹窗 */}
-      {selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold">订单详情</h2>
-              <button
-                onClick={() => setSelectedOrder(null)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
+      {selected && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={() => setSelected(null)}>
+          <div className="bg-zinc-900 rounded-xl max-w-lg w-full max-h-[80vh] overflow-y-auto border border-zinc-800 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-zinc-800 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-zinc-100">{t("orders.orderDetail")}</h2>
+              <button onClick={() => setSelected(null)} className="p-1 rounded hover:bg-zinc-800 cursor-pointer"><X className="w-4 h-4 text-zinc-500" /></button>
             </div>
-            <div className="p-6">
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <p className="text-sm text-gray-600">订单号</p>
-                  <p className="font-medium">{selectedOrder.order_no}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">客户ID</p>
-                  <p className="font-medium">{selectedOrder.customer_id}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">状态</p>
-                  <span
-                    className={`px-2 py-1 text-xs rounded-full ${
-                      statusColors[selectedOrder.status]
-                    }`}
-                  >
-                    {statusLabels[selectedOrder.status]}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">总金额</p>
-                  <p className="font-medium">
-                    ¥{selectedOrder.total_amount.toLocaleString()}
-                  </p>
-                </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {[["orders.orderNo", selected.order_no], ["orders.customer", selected.customer_id], ["orders.amount", `¥${selected.total_amount.toLocaleString()}`]].map(([k, v]) => (
+                  <div key={k}><p className="text-[10px] text-zinc-500 mb-0.5">{t(k)}</p><p className="text-sm font-semibold text-zinc-100">{v}</p></div>
+                ))}
+                <div><p className="text-[10px] text-zinc-500 mb-0.5">{t("orders.status")}</p><span className={`text-[11px] font-medium ${statusStyles[selected.status]}`}>{t(`orders.status${selected.status.charAt(0).toUpperCase() + selected.status.slice(1)}`)}</span></div>
               </div>
-
-              <div className="mb-6">
-                <p className="text-sm text-gray-600 mb-2">收货地址</p>
-                <p className="p-3 bg-gray-50 rounded">
-                  {selectedOrder.shipping_address}
-                </p>
-              </div>
-
+              <div><p className="text-[10px] text-zinc-500 mb-1">{t("orders.shippingAddress")}</p><p className="text-xs text-zinc-300 p-2.5 bg-zinc-800/50 rounded-lg">{selected.shipping_address}</p></div>
               <div>
-                <p className="text-sm text-gray-600 mb-2">商品明细</p>
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left">商品</th>
-                      <th className="px-4 py-2 text-right">单价</th>
-                      <th className="px-4 py-2 text-right">数量</th>
-                      <th className="px-4 py-2 text-right">小计</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {selectedOrder.items.map((item, i) => (
-                      <tr key={i}>
-                        <td className="px-4 py-2">{item.product_name}</td>
-                        <td className="px-4 py-2 text-right">
-                          ¥{item.unit_price.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-2 text-right">{item.quantity}</td>
-                        <td className="px-4 py-2 text-right font-medium">
-                          ¥{item.subtotal.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                <p className="text-[10px] text-zinc-500 mb-1.5">{t("orders.productDetail")}</p>
+                <table className="w-full text-xs">
+                  <thead><tr className="border-b border-zinc-800">{[t("orders.products"), t("orders.amount"), t("orders.quantity"), t("orders.subtotal")].map((h) => <th key={h} className="py-1.5 text-left text-[10px] font-semibold text-zinc-500">{h}</th>)}</tr></thead>
+                  <tbody className="divide-y divide-zinc-800/50">{selected.items.map((i, idx) => (
+                    <tr key={idx}><td className="py-1.5 text-zinc-300">{i.product_name}</td><td className="py-1.5 text-zinc-400">¥{i.unit_price.toLocaleString()}</td><td className="py-1.5 text-zinc-400">{i.quantity}</td><td className="py-1.5 font-semibold text-zinc-200">¥{i.subtotal.toLocaleString()}</td></tr>
+                  ))}</tbody>
                 </table>
               </div>
             </div>
