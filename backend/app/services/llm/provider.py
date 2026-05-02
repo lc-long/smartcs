@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import time
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
+
 import structlog
 from langchain_core.language_models import BaseChatModel
 
@@ -8,10 +14,107 @@ from backend.app.core.config.settings import Settings, get_settings
 logger = structlog.get_logger()
 
 
+@dataclass
+class TokenUsage:
+    """Token usage record"""
+    timestamp: datetime = field(default_factory=datetime.now)
+    model: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost: float = 0.0
+    latency_ms: int = 0
+
+
+@dataclass
+class ModelStats:
+    """Aggregate stats per model"""
+    total_requests: int = 0
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_tokens: int = 0
+    total_cost: float = 0.0
+    total_latency_ms: int = 0
+
+
+class TokenCounter:
+    """Token usage counter with aggregation"""
+
+    PRICING = {
+        "MiniMax-Text-01": {"prompt": 0.001, "completion": 0.003},
+        "gpt-4o": {"prompt": 0.005, "completion": 0.015},
+        "gpt-4o-mini": {"prompt": 0.00015, "completion": 0.0006},
+        "claude-3-5-sonnet": {"prompt": 0.003, "completion": 0.015},
+        "claude-3-5-haiku": {"prompt": 0.0008, "completion": 0.004},
+    }
+
+    def __init__(self, max_history: int = 1000):
+        self._usage_history: list[TokenUsage] = []
+        self._model_stats: dict[str, ModelStats] = {}
+        self._lock = threading.Lock()
+        self._max_history = max_history
+
+    def record(self, usage: TokenUsage) -> None:
+        with self._lock:
+            self._usage_history.append(usage)
+            if len(self._usage_history) > self._max_history:
+                self._usage_history = self._usage_history[-self._max_history:]
+
+            model = usage.model
+            if model not in self._model_stats:
+                self._model_stats[model] = ModelStats()
+            stats = self._model_stats[model]
+            stats.total_requests += 1
+            stats.total_prompt_tokens += usage.prompt_tokens
+            stats.total_completion_tokens += usage.completion_tokens
+            stats.total_tokens += usage.total_tokens
+            stats.total_cost += usage.cost
+            stats.total_latency_ms += usage.latency_ms
+
+    def get_usage(self, model: str | None = None) -> list[TokenUsage] | dict[str, ModelStats]:
+        with self._lock:
+            if model:
+                return [u for u in self._usage_history if u.model == model]
+            return {k: v for k, v in self._model_stats.items()}
+
+    def get_stats(self, model: str) -> ModelStats | None:
+        with self._lock:
+            return self._model_stats.get(model)
+
+    def get_total_stats(self) -> dict[str, Any]:
+        with self._lock:
+            total = {
+                "total_requests": 0,
+                "total_tokens": 0,
+                "total_cost": 0.0,
+            }
+            for stats in self._model_stats.values():
+                total["total_requests"] += stats.total_requests
+                total["total_tokens"] += stats.total_tokens
+                total["total_cost"] += stats.total_cost
+            return total
+
+
+_token_counter: TokenCounter | None = None
+
+
+def get_token_counter() -> TokenCounter:
+    global _token_counter
+    if _token_counter is None:
+        _token_counter = TokenCounter()
+    return _token_counter
+
+
+def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    pricing = TokenCounter.PRICING.get(model, {"prompt": 0.001, "completion": 0.003})
+    return prompt_tokens * pricing["prompt"] + completion_tokens * pricing["completion"]
+
+
 class LLMProvider:
     def __init__(self, settings: Settings | None = None):
         self._settings = settings or get_settings()
         self._cache: dict[str, BaseChatModel] = {}
+        self._token_counter = get_token_counter()
 
     def get_llm(
         self,
