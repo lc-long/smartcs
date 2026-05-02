@@ -1,4 +1,5 @@
 import { Routes, Route, Link, useLocation, Navigate, Outlet } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import ChatPage from "./pages/ChatPage";
@@ -11,35 +12,35 @@ import { KnowledgePage } from "./pages/KnowledgePage";
 import { RefundsPage } from "./pages/RefundsPage";
 import { LogisticsPage } from "./pages/LogisticsPage";
 import { FeedbackPage } from "./pages/FeedbackPage";
+import {
+  MessageSquare, BarChart3, Truck, SmilePlus, ShoppingBag, Package,
+  Users, Wallet, BookOpen, ShieldCheck, LogOut, Zap, Globe,
+} from "lucide-react";
+import { useState } from "react";
 
-// 路由保护组件
 function ProtectedRoute({ requiredRole }: { requiredRole?: string }) {
   const { user, isLoading } = useAuth();
+  const { t } = useTranslation();
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      <div className="flex items-center justify-center h-screen bg-zinc-950">
+        <div className="w-6 h-6 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin" />
       </div>
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!user) return <Navigate to="/login" replace />;
 
   if (requiredRole) {
-    const roleHierarchy = { admin: 3, agent: 2, viewer: 1 };
-    const userLevel = roleHierarchy[user.role] || 0;
-    const requiredLevel = roleHierarchy[requiredRole as keyof typeof roleHierarchy] || 0;
-
-    if (userLevel < requiredLevel) {
+    const h = { admin: 3, agent: 2, viewer: 1 };
+    if ((h[user.role] || 0) < (h[requiredRole as keyof typeof h] || 0)) {
       return (
-        <div className="flex items-center justify-center h-screen">
+        <div className="flex items-center justify-center h-screen bg-zinc-950">
           <div className="text-center">
-            <p className="text-4xl mb-4">🚫</p>
-            <p className="text-xl font-semibold">权限不足</p>
-            <p className="text-gray-600 mt-2">您没有访问此页面的权限</p>
+            <ShieldCheck className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
+            <p className="text-sm font-medium text-zinc-300">{t("auth.accessDenied")}</p>
+            <p className="text-xs text-zinc-500 mt-1">{t("auth.accessDeniedDesc")}</p>
           </div>
         </div>
       );
@@ -49,23 +50,53 @@ function ProtectedRoute({ requiredRole }: { requiredRole?: string }) {
   return <Outlet />;
 }
 
-// 导航布局组件
+function LanguageSwitcher() {
+  const { i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const langs = [{ code: "zh", label: "中文" }, { code: "en", label: "English" }];
+  const current = langs.find((l) => l.code === i18n.language) || langs[0];
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors text-xs cursor-pointer w-full">
+        <Globe className="w-3.5 h-3.5" />
+        <span>{current.label}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full left-0 mb-1 w-28 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
+            {langs.map((lang) => (
+              <button key={lang.code} onClick={() => { i18n.changeLanguage(lang.code); setOpen(false); }}
+                className={`w-full px-3 py-1.5 text-left text-xs cursor-pointer transition-colors ${i18n.language === lang.code ? "text-indigo-400" : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"}`}>
+                {lang.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AppLayout() {
   const { user, logout, isAgent, canApprove } = useAuth();
   const location = useLocation();
+  const { t } = useTranslation();
 
   const navItems = [
-    { path: "/", label: "智能客服", icon: "💬", group: "客服", show: true },
-    { path: "/dashboard", label: "数据看板", icon: "📊", group: "数据", show: true },
-    { path: "/logistics", label: "物流统计", icon: "🚚", group: "数据", show: isAgent },
-    { path: "/feedback", label: "客户满意度", icon: "😊", group: "数据", show: isAgent },
-    { path: "/products", label: "商品管理", icon: "🛍️", group: "电商", show: true },
-    { path: "/orders", label: "订单管理", icon: "📦", group: "电商", show: true },
-    { path: "/customers", label: "客户管理", icon: "👥", group: "电商", show: true },
-    { path: "/refunds", label: "退款管理", icon: "💸", group: "电商", show: isAgent },
-    { path: "/knowledge", label: "知识库", icon: "📚", group: "系统", show: true },
-    { path: "/admin", label: "审批管理", icon: "⚙️", group: "系统", show: canApprove },
-  ].filter((item) => item.show);
+    { path: "/", label: t("nav.chat"), icon: MessageSquare, group: t("nav.service"), show: true },
+    { path: "/dashboard", label: t("nav.dashboard"), icon: BarChart3, group: t("nav.analytics"), show: true },
+    { path: "/logistics", label: t("nav.logistics"), icon: Truck, group: t("nav.analytics"), show: isAgent },
+    { path: "/feedback", label: t("nav.feedback"), icon: SmilePlus, group: t("nav.analytics"), show: isAgent },
+    { path: "/products", label: t("nav.products"), icon: ShoppingBag, group: t("nav.commerce"), show: true },
+    { path: "/orders", label: t("nav.orders"), icon: Package, group: t("nav.commerce"), show: true },
+    { path: "/customers", label: t("nav.customers"), icon: Users, group: t("nav.commerce"), show: true },
+    { path: "/refunds", label: t("nav.refunds"), icon: Wallet, group: t("nav.commerce"), show: isAgent },
+    { path: "/knowledge", label: t("nav.knowledge"), icon: BookOpen, group: t("nav.system"), show: true },
+    { path: "/admin", label: t("nav.approvals"), icon: ShieldCheck, group: t("nav.system"), show: canApprove },
+  ].filter((i) => i.show);
 
   const groups = navItems.reduce((acc, item) => {
     if (!acc[item.group]) acc[item.group] = [];
@@ -73,74 +104,59 @@ function AppLayout() {
     return acc;
   }, {} as Record<string, typeof navItems>);
 
-  const roleLabels: Record<string, string> = {
-    admin: "管理员",
-    agent: "客服",
-    viewer: "访客",
-  };
-
-  const roleColors: Record<string, string> = {
-    admin: "bg-red-100 text-red-800",
-    agent: "bg-blue-100 text-blue-800",
-    viewer: "bg-gray-100 text-gray-800",
-  };
+  const roleLabels: Record<string, string> = { admin: "Admin", agent: "Agent", viewer: "Viewer" };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <nav className="w-24 bg-white border-r flex flex-col items-center py-4 gap-1 overflow-y-auto flex-shrink-0">
-        <div className="mb-4 flex-shrink-0">
-          <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">
-            S
-          </div>
-        </div>
-
-        {Object.entries(groups).map(([groupName, items]) => (
-          <div key={groupName} className="w-full flex-shrink-0">
-            <div className="px-2 py-1">
-              <p className="text-[10px] text-gray-400 text-center uppercase">
-                {groupName}
-              </p>
+    <div className="flex h-screen bg-zinc-950 overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-[220px] bg-zinc-950 flex flex-col flex-shrink-0 border-r border-zinc-800/70">
+        <div className="h-14 flex items-center px-4 border-b border-zinc-800/50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <Zap className="w-4 h-4 text-white" />
             </div>
-            {items.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`w-full flex flex-col items-center py-2 text-xs transition-colors ${
-                  location.pathname === item.path
-                    ? "text-blue-600 bg-blue-50"
-                    : "text-gray-600 hover:bg-gray-50"
-                }`}
-                title={item.label}
-              >
-                <span className="text-xl mb-0.5">{item.icon}</span>
-                <span className="truncate max-w-[72px]">{item.label}</span>
-              </Link>
-            ))}
+            <h1 className="text-sm font-bold text-zinc-100 tracking-tight">SmartCS</h1>
           </div>
-        ))}
-
-        <div className="flex-1"></div>
-
-        {/* 用户信息 */}
-        <div className="w-full px-2 py-2 border-t flex-shrink-0">
-          <div className="text-center mb-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${roleColors[user?.role || "viewer"]}`}>
-              {roleLabels[user?.role || "viewer"]}
-            </span>
-          </div>
-          <p className="text-xs text-gray-600 text-center truncate mb-2">
-            {user?.username}
-          </p>
-          <button
-            onClick={logout}
-            className="w-full text-xs text-red-600 hover:text-red-800 py-1"
-          >
-            退出
-          </button>
         </div>
-      </nav>
 
-      <main className="flex-1 overflow-auto">
+        <nav className="flex-1 overflow-y-auto py-3 px-2">
+          {Object.entries(groups).map(([groupName, items]) => (
+            <div key={groupName} className="mb-4">
+              <p className="px-2 mb-1 text-[10px] font-semibold text-zinc-600 uppercase tracking-widest">{groupName}</p>
+              {items.map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.path;
+                return (
+                  <Link key={item.path} to={item.path}
+                    className={`group flex items-center gap-2.5 px-2 py-1.5 rounded-md mb-0.5 text-[13px] font-medium transition-all duration-100 cursor-pointer ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300"}`}>
+                    <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? "text-zinc-300" : "text-zinc-600 group-hover:text-zinc-500"}`} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+
+        <div className="border-t border-zinc-800/50 p-2 space-y-1">
+          <LanguageSwitcher />
+          <div className="flex items-center gap-2.5 px-2 py-1.5">
+            <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[11px] font-bold text-zinc-400">
+              {user?.username?.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-zinc-300 truncate">{user?.username}</p>
+              <p className="text-[10px] text-zinc-600">{roleLabels[user?.role || "viewer"]}</p>
+            </div>
+            <button onClick={logout} className="p-1 rounded text-zinc-600 hover:text-red-400 transition-colors cursor-pointer" title="Sign out">
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Content */}
+      <main className="flex-1 overflow-auto bg-zinc-950">
         <Outlet />
       </main>
     </div>
