@@ -11,6 +11,7 @@ from backend.app.tools.technical.tools import (
     product_info,
     ticket_create,
     ticket_lookup,
+    ticket_update,
 )
 
 logger = structlog.get_logger()
@@ -52,7 +53,7 @@ class TechnicalAgent(BaseAgent):
         )
 
     def get_tools(self):
-        return [knowledge_search, ticket_create, ticket_lookup, product_info, product_review_lookup]
+        return [knowledge_search, ticket_create, ticket_lookup, ticket_update, product_info, product_review_lookup]
 
     def get_system_prompt(self):
         return SYSTEM_PROMPT

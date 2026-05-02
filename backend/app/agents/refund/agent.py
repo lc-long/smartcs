@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 
 from backend.app.agents.base import BaseAgent
 from backend.app.services.llm.provider import LLMProvider
-from backend.app.tools.refund.tools import order_lookup, process_refund, refund_eligibility
+from backend.app.tools.refund.tools import order_lookup, process_refund, refund_eligibility, refund_status_lookup
 
 logger = structlog.get_logger()
 
@@ -42,6 +42,11 @@ SYSTEM_PROMPT = """你是退款客服Agent。职责：处理退款请求。
 - ¥500-¥2000：需要主管审批，1-2个工作日
 - >¥2000：需要财务审批，3-5个工作日
 
+## 你可以处理的场景
+- **查询退款状态**：用户问"我的退款到哪了"、"退款进度" → 使用 refund_status_lookup
+- **申请退款**：用户要退款 → 使用 refund_eligibility 检查资格，再用 process_refund 处理
+- **查询订单**：用户问订单相关 → 使用 order_lookup
+
 ## 回复格式要求
 - 必须使用中文表头！
 - 表格格式：| 列名1 | 列名2 | 列名3 |
@@ -68,7 +73,7 @@ class RefundAgent(BaseAgent):
         )
 
     def get_tools(self):
-        return [order_lookup, refund_eligibility, process_refund]
+        return [order_lookup, refund_eligibility, process_refund, refund_status_lookup]
 
     def get_system_prompt(self):
         return SYSTEM_PROMPT
