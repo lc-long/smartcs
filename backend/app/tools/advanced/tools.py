@@ -390,3 +390,174 @@ async def customer_feedback_lookup(customer_id: str | None = None, feedback_type
             return json.dumps(data, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": f"查询反馈失败: {str(e)}"}, ensure_ascii=False)
+
+
+@tool
+async def customer_feedback_submit(customer_id: str, feedback_type: str, subject: str, content: str, rating: int | None = None) -> str:
+    """提交客户反馈。
+
+    Args:
+        customer_id: 客户ID
+        feedback_type: 反馈类型 (complaint/suggestion/praise/question)
+        subject: 反馈主题
+        content: 反馈内容
+        rating: 评分（1-5星），可选
+    """
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            feedback = CustomerFeedback(
+                customer_id=customer_id,
+                type=feedback_type,
+                subject=subject,
+                content=content,
+                rating=rating,
+                status="pending",
+            )
+            session.add(feedback)
+            await session.commit()
+
+            return json.dumps({
+                "feedback_id": feedback.id,
+                "customer_id": customer_id,
+                "type": feedback_type,
+                "subject": subject,
+                "status": "pending",
+                "message": "反馈已提交，我们会尽快处理并回复您",
+            }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"提交反馈失败: {str(e)}"}, ensure_ascii=False)
+
+
+@tool
+async def loyalty_points_redeem(customer_id: str, points: int, coupon_id: str | None = None) -> str:
+    """兑换客户积分。
+
+    Args:
+        customer_id: 客户ID
+        points: 要兑换的积分数量
+        coupon_id: 可选的兑换优惠券ID
+    """
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            customer_result = await session.execute(
+                select(Customer).where(Customer.id == customer_id)
+            )
+            customer = customer_result.scalar_one_or_none()
+
+            if not customer:
+                return json.dumps({"error": f"未找到客户: {customer_id}"}, ensure_ascii=False)
+
+            if customer.loyalty_points < points:
+                return json.dumps({
+                    "error": f"积分不足。当前积分: {customer.loyalty_points}，需要: {points}"
+                }, ensure_ascii=False)
+
+            redeem_value = points / 100
+            points_record = LoyaltyPoints(
+                customer_id=customer_id,
+                points=-points,
+                balance=customer.loyalty_points - points,
+                type="redeem",
+                description=f"积分兑换: -{points}积分 (价值约¥{redeem_value})",
+            )
+            session.add(points_record)
+
+            customer.loyalty_points -= points
+
+            coupon_message = ""
+            if coupon_id:
+                coupon_result = await session.execute(
+                    select(Coupon).where(Coupon.id == coupon_id, Coupon.is_active == True)
+                )
+                coupon = coupon_result.scalar_one_or_none()
+                if coupon:
+                    cc = CustomerCoupon(
+                        customer_id=customer_id,
+                        coupon_id=coupon.id,
+                    )
+                    session.add(cc)
+                    coupon_message = f"，已发放优惠券: {coupon.code}"
+
+            await session.commit()
+
+            return json.dumps({
+                "customer_id": customer_id,
+                "redeemed_points": points,
+                "redeem_value": redeem_value,
+                "remaining_points": customer.loyalty_points,
+                "message": f"积分兑换成功: -{points}积分 (价值约¥{redeem_value}){coupon_message}",
+            }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"积分兑换失败: {str(e)}"}, ensure_ascii=False)
+
+
+@tool
+async def coupon_apply(customer_id: str, coupon_code: str, order_no: str) -> str:
+    """使用优惠券。
+
+    Args:
+        customer_id: 客户ID
+        coupon_code: 优惠券代码
+        order_no: 订单号
+    """
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            order_result = await session.execute(
+                select(Order).where(Order.order_no == order_no)
+            )
+            order = order_result.scalar_one_or_none()
+
+            if not order:
+                return json.dumps({"error": f"未找到订单: {order_no}"}, ensure_ascii=False)
+
+            coupon_result = await session.execute(
+                select(Coupon).where(Coupon.code == coupon_code, Coupon.is_active == True)
+            )
+            coupon = coupon_result.scalar_one_or_none()
+
+            if not coupon:
+                return json.dumps({"error": f"无效的优惠券代码: {coupon_code}"}, ensure_ascii=False)
+
+            if coupon.valid_until < datetime.now():
+                return json.dumps({"error": "优惠券已过期"}, ensure_ascii=False)
+
+            customer_coupon_result = await session.execute(
+                select(CustomerCoupon).where(
+                    CustomerCoupon.customer_id == customer_id,
+                    CustomerCoupon.coupon_id == coupon.id,
+                    CustomerCoupon.is_used == False,
+                )
+            )
+            customer_coupon = customer_coupon_result.scalar_one_or_none()
+
+            if not customer_coupon:
+                return json.dumps({"error": "该优惠券不可用或已被使用"}, ensure_ascii=False)
+
+            if float(order.total_amount) < float(coupon.min_order_amount):
+                return json.dumps({
+                    "error": f"订单金额不满足优惠券使用条件（需满¥{coupon.min_order_amount}）"
+                }, ensure_ascii=False)
+
+            discount_amount = float(coupon.discount_value)
+            if coupon.discount_type == "percentage":
+                discount_amount = float(order.total_amount) * (discount_amount / 100)
+
+            customer_coupon.is_used = True
+            customer_coupon.used_at = datetime.now()
+            customer_coupon.order_id = order.id
+
+            await session.commit()
+
+            return json.dumps({
+                "coupon_code": coupon_code,
+                "order_no": order_no,
+                "discount_type": coupon.discount_type,
+                "discount_value": float(coupon.discount_value),
+                "discount_amount": min(discount_amount, float(order.total_amount)),
+                "message": f"优惠券 {coupon_code} 已成功使用，减免 ¥{discount_amount:.2f}",
+            }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"使用优惠券失败: {str(e)}"}, ensure_ascii=False)
