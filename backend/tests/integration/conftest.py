@@ -14,6 +14,7 @@ os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only"
 @pytest.fixture
 async def client():
     from backend.app.main import app
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -22,13 +23,14 @@ async def client():
 @pytest.fixture
 async def authenticated_client():
     from backend.app.main import app
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.post(
             "/api/v1/auth/login",
             data={
-                "username": "agent1",
-                "password": "agent123",
+                "username": "testuser",
+                "password": "testpassword123",
             },
         )
         if response.status_code == 200:
