@@ -12,6 +12,9 @@ from backend.app.services.llm.provider import LLMProvider
 
 logger = structlog.get_logger()
 
+MAX_ROUTER_RETRIES = 2
+ROUTER_RETRY_DELAY = 0.5
+
 SYSTEM_PROMPT = """你是一个意图分类器。分析用户消息，输出JSON格式的分类结果。
 
 意图类别：
@@ -91,19 +94,7 @@ class RouterAgent(BaseAgent):
             )
             return keyword_result
 
-        try:
-            prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
-            response: AIMessage = await self.llm.ainvoke(prompt_messages)
-            content = response.content if isinstance(response.content, str) else str(response.content)
-            decision = self._parse_response(content, user_text)
-        except Exception as e:
-            logger.warning("router_llm_failed", error=str(e))
-            decision = keyword_result or RouteDecision(
-                intent=IntentType.GENERAL,
-                confidence=0.3,
-                reasoning="分类失败，降级到通用处理",
-                suggested_agent="general",
-            )
+        decision = await self._classify_with_retry(messages, user_text, keyword_result)
 
         logger.info(
             "router_classify_end",
@@ -111,6 +102,41 @@ class RouterAgent(BaseAgent):
             confidence=decision.confidence,
         )
         return decision
+
+    async def _classify_with_retry(
+        self,
+        messages: list[BaseMessage],
+        user_text: str,
+        keyword_result: RouteDecision | None,
+    ) -> RouteDecision:
+        """LLM分类，带重试机制"""
+        prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+        last_error: Exception | None = None
+
+        for attempt in range(MAX_ROUTER_RETRIES):
+            try:
+                response: AIMessage = await self.llm.ainvoke(prompt_messages)
+                content = response.content if isinstance(response.content, str) else str(response.content)
+                return self._parse_response(content, user_text)
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "router_llm_retry",
+                    attempt=attempt + 1,
+                    max_retries=MAX_ROUTER_RETRIES,
+                    error=str(e),
+                )
+                if attempt < MAX_ROUTER_RETRIES - 1:
+                    import asyncio
+                    await asyncio.sleep(ROUTER_RETRY_DELAY * (attempt + 1))
+
+        logger.error("router_llm_all_retries_failed", error=str(last_error))
+        return keyword_result or RouteDecision(
+            intent=IntentType.GENERAL,
+            confidence=0.3,
+            reasoning="分类失败，降级到通用处理",
+            suggested_agent="general",
+        )
 
     def _classify_by_keywords(self, text: str) -> RouteDecision | None:
         text_lower = text.lower()
