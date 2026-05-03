@@ -45,6 +45,8 @@ class RouteDecision(BaseModel):
     suggested_agent: str = Field(..., description="建议的Agent名称")
     is_multi_intent: bool = Field(False, description="是否检测到多意图")
     all_intents: list[IntentType] = Field(default_factory=list, description="所有检测到的意图")
+    requires_clarification: bool = Field(False, description="是否需要意图澄清")
+    clarification_question: str | None = Field(None, description="澄清问题")
 
 
 class ChatMessage(BaseModel):

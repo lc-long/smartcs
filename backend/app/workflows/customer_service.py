@@ -61,6 +61,26 @@ class CustomerServiceWorkflow:
         self.communicator.register_agent("general", self.general)
         self.communicator.register_agent("supervisor", self.supervisor)
 
+        # 注册 Agent capabilities 到 A2A 协议
+        from backend.app.agents.protocol import get_capability_registry, AgentCapability
+
+        agents_with_caps = [
+            (self.billing, ["billing"], ["invoice_lookup", "payment_history", "billing_summary"]),
+            (self.technical, ["technical"], ["knowledge_search", "ticket_create", "ticket_lookup"]),
+            (self.refund, ["refund"], ["order_lookup", "refund_eligibility", "process_refund"]),
+            (self.general, ["general"], ["faq_search", "company_info", "order_lookup"]),
+        ]
+
+        registry = get_capability_registry()
+        for agent, intents, tools in agents_with_caps:
+            cap = AgentCapability(
+                name=agent.name,
+                description=agent.description,
+                intent_types=intents,
+                tools=tools,
+            )
+            registry.register(cap)
+
     def build_graph(self) -> CompiledStateGraph:
         if self._graph is not None:
             return self._graph
@@ -113,17 +133,31 @@ class CustomerServiceWorkflow:
         customer_id: str,
         emit_callback=None,
     ) -> CustomerServiceState:
+        from backend.app.services.summarizer import get_summarizer
+
         graph = self.build_graph()
 
-        # 创建工作记忆
-        user_text = " ".join(
-            m.content if hasattr(m, "content") else str(m) for m in messages
-        )
-        working_memory = self.memory_store.create(
-            conversation_id=conversation_id,
-            customer_id=customer_id,
-            original_request=user_text,
-        )
+        # 检查是否需要摘要长对话
+        summarizer = get_summarizer()
+        summarized_messages, summary = await summarizer.summarize_if_needed(messages)
+        if summary:
+            logger.info("conversation_summarized_in_run", summary_len=len(summary))
+            working_memory = self.memory_store.create(
+                conversation_id=conversation_id,
+                customer_id=customer_id,
+                original_request="[对话已摘要]",
+            )
+            if working_memory:
+                working_memory.add_thought(f"[会话摘要] {summary[:200]}", agent="summarizer")
+        else:
+            user_text = " ".join(
+                m.content if hasattr(m, "content") else str(m) for m in messages
+            )
+            working_memory = self.memory_store.create(
+                conversation_id=conversation_id,
+                customer_id=customer_id,
+                original_request=user_text,
+            )
 
         # 存储事件回调
         self._emit_callback = emit_callback
@@ -131,7 +165,7 @@ class CustomerServiceWorkflow:
         initial_state: CustomerServiceState = {
             "conversation_id": conversation_id,
             "customer_id": customer_id,
-            "messages": messages,
+            "messages": summarized_messages,
             "current_intent": "",
             "routing_confidence": 0.0,
             "routing_reasoning": "",

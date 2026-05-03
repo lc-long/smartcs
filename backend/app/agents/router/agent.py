@@ -108,6 +108,25 @@ class RouterAgent(BaseAgent):
 
         decision = await self._classify_with_retry(messages, user_text, keyword_result, recent_context)
 
+        # 低置信度时使用意图澄清器
+        from backend.app.services.clarifier import get_intent_clarifier
+        clarifier = get_intent_clarifier()
+
+        if clarifier.needs_clarification(decision.confidence, decision.intent.value):
+            logger.info(
+                "router_clarification_needed",
+                confidence=decision.confidence,
+                intent=decision.intent.value,
+            )
+            explanation, question = clarifier.generate_clarification_response(
+                decision.confidence,
+                decision.intent.value,
+                decision.reasoning,
+                user_text,
+            )
+            decision.requires_clarification = True
+            decision.clarification_question = question
+
         logger.info(
             "router_classify_end",
             intent=decision.intent.value,

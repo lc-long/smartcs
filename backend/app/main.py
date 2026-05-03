@@ -8,11 +8,13 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.v1.admin import router as admin_router
+from backend.app.api.v1.agents import router as agents_router
 from backend.app.api.v1.analytics import router as analytics_router
 from backend.app.api.v1.auth import router as auth_router
 from backend.app.api.v1.chat import router as chat_router
 from backend.app.api.v1.ecommerce import router as ecommerce_router
 from backend.app.api.v1.health import router as health_router
+from backend.app.api.v1.metrics import router as metrics_router
 from backend.app.api.v1.traces import router as traces_router
 from backend.app.api.websocket.chat_ws import handle_websocket
 from backend.app.core.config.settings import get_settings
@@ -88,6 +90,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(ecommerce_router)
     app.include_router(analytics_router)
+    app.include_router(metrics_router)
+    app.include_router(agents_router)
 
     @app.websocket("/ws/chat/{conversation_id}")
     async def websocket_chat(websocket: WebSocket, conversation_id: str) -> None:
