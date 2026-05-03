@@ -17,6 +17,9 @@ ROUTER_RETRY_DELAY = 0.5
 
 SYSTEM_PROMPT = """你是一个意图分类器。分析用户消息，输出JSON格式的分类结果。
 
+**重要：你需要分析用户当前的完整对话上下文，而不仅仅是最后一条消息。**
+用户可能在之前的消息中表达了意图，然后在后续消息中补充细节或改变了话题。
+
 意图类别：
 - billing: 账单、发票、支付、扣费相关查询
 - technical: 技术问题、设备故障、产品问题
@@ -28,6 +31,7 @@ SYSTEM_PROMPT = """你是一个意图分类器。分析用户消息，输出JSON
 - "查订单"、"订单查询"、"check orders" → general（只是查询，不是退款）
 - "退款"、"退货"、"申请退款"、"refund" → refund（明确要退款）
 - "查账单"、"发票"、"billing" → billing
+- 如果用户说"那个"或"之前那个"，需要结合对话历史判断指的是什么
 
 单意图检测：用户只表达一个意图时输出单条结果。
 多意图检测：用户同时表达多个意图时，使用"intents"数组返回多个意图。
@@ -76,16 +80,24 @@ class RouterAgent(BaseAgent):
     async def classify_intent(self, messages: list[BaseMessage]) -> RouteDecision:
         logger.info("router_classify_start", message_count=len(messages))
 
-        # 只分析最后一条用户消息
-        user_text = ""
-        for msg in reversed(messages):
-            if hasattr(msg, "content") and isinstance(msg.content, str) and msg.content.strip():
-                user_text = msg.content
-                break
+        # 构建完整对话上下文用于分析
+        user_messages = [
+            m.content for m in messages
+            if hasattr(m, "content") and isinstance(m.content, str)
+        ]
+        # 用最后3条消息作为上下文
+        recent_context = "\n".join(user_messages[-3:]) if len(user_messages) > 1 else (user_messages[-1] if user_messages else "")
 
-        logger.info("router_user_text", text=user_text[:200])
+        # 如果只有一条消息，直接用这条
+        if len(user_messages) == 1:
+            user_text = user_messages[0]
+        else:
+            # 多条消息时，用最后一条但考虑上下文
+            user_text = user_messages[-1]
 
-        keyword_result = self._classify_by_keywords(user_text)
+        logger.info("router_user_text", text=user_text[:200], context_len=len(recent_context))
+
+        keyword_result = self._classify_by_keywords(user_text, recent_context)
         if keyword_result and keyword_result.confidence >= 0.8:
             logger.info(
                 "router_keyword_match",
@@ -94,7 +106,7 @@ class RouterAgent(BaseAgent):
             )
             return keyword_result
 
-        decision = await self._classify_with_retry(messages, user_text, keyword_result)
+        decision = await self._classify_with_retry(messages, user_text, keyword_result, recent_context)
 
         logger.info(
             "router_classify_end",
@@ -108,9 +120,13 @@ class RouterAgent(BaseAgent):
         messages: list[BaseMessage],
         user_text: str,
         keyword_result: RouteDecision | None,
+        recent_context: str = "",
     ) -> RouteDecision:
         """LLM分类，带重试机制"""
-        prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+        # 在系统提示中附加对话上下文
+        context_note = f"\n\n对话上下文（最近消息）：\n{recent_context}" if recent_context else ""
+        prompt_with_context = SYSTEM_PROMPT + context_note
+        prompt_messages = [SystemMessage(content=prompt_with_context)] + messages
         last_error: Exception | None = None
 
         for attempt in range(MAX_ROUTER_RETRIES):
@@ -138,11 +154,12 @@ class RouterAgent(BaseAgent):
             suggested_agent="general",
         )
 
-    def _classify_by_keywords(self, text: str) -> RouteDecision | None:
-        text_lower = text.lower()
+    def _classify_by_keywords(self, text: str, context: str = "") -> RouteDecision | None:
+        # 优先在上下文中查找关键词
+        search_text = f"{context}\n{text}".lower()
         for intent, keywords in INTENT_KEYWORDS.items():
             for kw in keywords:
-                if kw in text_lower:
+                if kw in search_text:
                     return RouteDecision(
                         intent=intent,
                         confidence=0.9,
