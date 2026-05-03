@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import time
 from abc import ABC, abstractmethod
 from typing import Any
 
 import structlog
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
 from backend.app.core.config.settings import get_settings
-from backend.app.services.llm.provider import LLMProvider, TokenUsage, get_token_counter, estimate_cost
+from backend.app.services.llm.provider import (
+    LLMProvider,
+    TokenUsage,
+    estimate_cost,
+    get_token_counter,
+)
 
 logger = structlog.get_logger()
 
@@ -20,6 +24,8 @@ logger = structlog.get_logger()
 class BaseAgent(ABC):
     name: str = ""
     description: str = ""
+    intent_types: list[str] = []
+    tools: list[str] = []
 
     def __init__(
         self,
@@ -51,6 +57,14 @@ class BaseAgent(ABC):
 
     def get_system_prompt(self) -> str:
         return f"你是{self.name}客服Agent。{self.description}"
+
+    def get_capability(self) -> dict:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "intent_types": self.intent_types,
+            "tools": self.tools,
+        }
 
     async def _invoke_with_tools(
         self,
@@ -95,7 +109,7 @@ class BaseAgent(ABC):
             self._record_token_usage(response, elapsed_ms)
             return response
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             elapsed_ms = int((time.time() - start_time) * 1000)
             logger.error(
                 "agent_invoke_timeout",
@@ -133,7 +147,7 @@ class BaseAgent(ABC):
         for i in range(max_iterations):
             try:
                 response = await self._invoke_with_tools(current_messages, tools, timeout=timeout)
-            except TimeoutError as e:
+            except TimeoutError:
                 logger.error("agent_react_timeout", agent=self.name, iteration=i)
                 if last_response:
                     return last_response, all_tools_called
@@ -173,7 +187,7 @@ class BaseAgent(ABC):
                                 tool_call_id=tool_id,
                             )
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         tool_results.append(
                             ToolMessage(
                                 content=f"工具执行超时: {tool_name}",

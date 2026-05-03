@@ -5,6 +5,7 @@ import re
 import uuid
 
 import structlog
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -68,16 +69,19 @@ class CustomerServiceWorkflow:
 
         # 添加节点
         graph.add_node("planner", self._planner_node)
+        graph.add_node("reasoning", self._reasoning_node)
         graph.add_node("execute_simple", self._execute_simple_node)
         graph.add_node("execute_complex", self._execute_complex_node)
         graph.add_node("aggregate", self._aggregate_node)
         graph.add_node("hitl_check", self._hitl_check_node)
+        graph.add_node("reflect", self._reflect_node)
         graph.add_node("response", self._response_node)
 
         # 添加边
         graph.add_edge(START, "planner")
+        graph.add_edge("planner", "reasoning")
         graph.add_conditional_edges(
-            "planner",
+            "reasoning",
             self._decide_execution_strategy,
             {
                 "simple": "execute_simple",
@@ -88,12 +92,13 @@ class CustomerServiceWorkflow:
         graph.add_edge("execute_simple", "hitl_check")
         graph.add_edge("execute_complex", "aggregate")
         graph.add_edge("aggregate", "hitl_check")
+        graph.add_edge("hitl_check", "reflect")
         graph.add_conditional_edges(
-            "hitl_check",
-            self._hitl_decision,
+            "reflect",
+            self._reflect_decision,
             {
-                "needs_approval": "response",
-                "no_approval": "response",
+                "needs_correction": "execute_simple",
+                "approved": "response",
             },
         )
         graph.add_edge("response", END)
@@ -272,6 +277,57 @@ class CustomerServiceWorkflow:
             "routing_reasoning": plan.reasoning,
             "active_agent": decision.suggested_agent,
         }
+
+    async def _reasoning_node(self, state: CustomerServiceState) -> dict:
+        """Chain-of-Thought 推理节点：在执行前显式推理"""
+        messages = state["messages"]
+        working_memory = self.memory_store.get(state["conversation_id"])
+
+        user_text = " ".join(
+            m.content if hasattr(m, "content") else str(m) for m in messages
+        )
+
+        reasoning_prompt = f"""你是一个任务推理专家。分析以下用户请求，进行显式的链式推理：
+
+用户请求：{user_text}
+
+当前状态：
+- 意图：{state['current_intent']}
+- 置信度：{state['routing_confidence']}
+- 建议Agent：{state['active_agent']}
+
+请按以下步骤进行链式推理（Chain-of-Thought）：
+
+1. **理解用户真正意图**：用户想要完成什么任务？
+2. **识别关键实体**：需要哪些信息（订单号、产品、金额等）？
+3. **确定所需工具**：哪些工具能帮助完成任务？
+4. **评估复杂性**：这是简单查询还是需要多步骤处理？
+5. **检查风险**：是否有退款、取消等高风险操作？
+
+最后给出你的推理结论：
+THINKING: <你的链式推理过程>
+CONCLUSION: <简短结论，包含执行计划>"""
+
+        try:
+            response = await self.llm.ainvoke([
+                SystemMessage(content=reasoning_prompt),
+                HumanMessage(content=user_text)
+            ])
+            reasoning_text = response.content if isinstance(response.content, str) else str(response.content)
+
+            if working_memory:
+                working_memory.add_thought(
+                    f"[CoT推理] {reasoning_text[:500]}",
+                    agent="reasoning",
+                )
+
+            logger.info("reasoning_node_completed", reasoning=reasoning_text[:200])
+
+            return {"reasoning": reasoning_text}
+
+        except Exception as e:
+            logger.warning("reasoning_node_failed", error=str(e))
+            return {"reasoning": f"推理失败: {str(e)}"}
 
     def _decide_execution_strategy(self, state: CustomerServiceState) -> str:
         """决定执行策略"""
@@ -663,6 +719,70 @@ class CustomerServiceWorkflow:
         if state.get("needs_human"):
             return "needs_approval"
         return "no_approval"
+
+    async def _reflect_node(self, state: CustomerServiceState) -> dict:
+        """Self-Correction 反思节点：检查响应是否合理"""
+        agent_response = state.get("agent_response", "")
+        tools_called = state.get("tools_called", [])
+        working_memory = self.memory_store.get(state["conversation_id"])
+
+        if not agent_response or len(agent_response) < 10:
+            if working_memory:
+                working_memory.add_observation(
+                    "[Self-Correction] 响应过短或为空，标记需要重试",
+                    agent="reflect",
+                )
+            return {"needs_correction": True}
+
+        reflection_prompt = f"""你是一个质量检查专家。检查以下AI客服回复是否存在问题：
+
+回复内容：{agent_response[:1000]}
+
+调用的工具：{', '.join(tools_called) if tools_called else '无'}
+
+请检查：
+1. 回复是否完整回答了用户问题？
+2. 回复中是否有错误信息（金额、订单号、状态等）？
+3. 回复语气是否合适（专业、友好）？
+4. 是否需要补充更多信息？
+
+THINKING: <你的检查思路>
+IS_VALID: true/false
+REASON: <简要原因>
+CORRECTION: <如果有问题，描述需要的修正>
+
+以JSON格式输出：
+{{"is_valid": true/false, "reason": "...", "correction": "..."}}"""
+
+        try:
+            response = await self.llm.ainvoke([
+                SystemMessage(content=reflection_prompt)
+            ])
+            reflection_text = response.content if isinstance(response.content, str) else str(response.content)
+
+            if working_memory:
+                working_memory.add_thought(
+                    f"[Self-Correction] {reflection_text[:500]}",
+                    agent="reflect",
+                )
+
+            is_valid = "true" in reflection_text.lower() and '"is_valid": true' in reflection_text.lower()
+
+            logger.info("reflect_node_completed", is_valid=is_valid)
+
+            if is_valid:
+                return {"reflection_passed": True}
+            else:
+                return {"needs_correction": True, "reflection": reflection_text}
+
+        except Exception as e:
+            logger.warning("reflect_node_failed", error=str(e))
+            return {"reflection_passed": True}
+
+    def _reflect_decision(self, state: CustomerServiceState) -> str:
+        if state.get("needs_correction"):
+            return "needs_correction"
+        return "approved"
 
     async def _response_node(self, state: CustomerServiceState) -> dict:
         agent = state["active_agent"]
