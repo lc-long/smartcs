@@ -141,38 +141,21 @@ class LLMProvider:
         messages: list,
         timeout: float | None = None,
     ) -> Any:
-        """Invoke LLM with retry and exponential backoff."""
+        from backend.app.services.llm.fallback import get_provider_strategy
+
         settings = self._settings
-        max_retries = settings.agent_retry_attempts
-        base_delay = settings.agent_retry_delay
         timeout = timeout or settings.agent_timeout_seconds
-        last_error: Exception | None = None
 
-        for attempt in range(max_retries):
-            try:
-                return await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout)
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "llm_invoke_timeout",
-                    attempt=attempt + 1,
-                    max_retries=max_retries,
-                    timeout=timeout,
-                )
-                raise
-            except Exception as e:
-                last_error = e
-                logger.warning(
-                    "llm_invoke_error",
-                    attempt=attempt + 1,
-                    max_retries=max_retries,
-                    error=str(e),
-                )
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    await asyncio.sleep(delay)
+        fallback_llm = None
+        if self._settings.deepseek_api_key:
+            fallback_llm = self._create_deepseek_llm("deepseek-chat", 0.3)
 
-        logger.error("llm_invoke_all_retries_failed", error=str(last_error))
-        raise last_error
+        strategy = get_provider_strategy()
+        return await strategy.invoke_with_fallback(
+            messages=messages,
+            primary_llm=llm,
+            fallback_llm=fallback_llm,
+        )
 
     def _create_llm(self, model_name: str, temperature: float) -> BaseChatModel:
         provider = self._settings.llm_provider
