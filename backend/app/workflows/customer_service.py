@@ -236,13 +236,35 @@ class CustomerServiceWorkflow:
         # 同时进行意图分类（用于简单任务路由）
         decision = await self.router.classify_intent(messages)
 
-        # 检查是否是多意图，如果是则标记为复杂任务
+        # 检查是否是多意图，如果是则标记为复杂任务并创建子任务
         is_multi = getattr(decision, 'is_multi_intent', False)
         if is_multi and working_memory:
             working_memory.current_plan = working_memory.current_plan or {}
             working_memory.current_plan["is_complex"] = True
             working_memory.current_plan["multi_intent"] = True
-            working_memory.current_plan["all_intents"] = getattr(decision, 'all_intents', [])
+            all_intents = getattr(decision, 'all_intents', [])
+            working_memory.current_plan["all_intents"] = all_intents
+
+            # 为每个意图创建子任务
+            sub_tasks = []
+            intent_ids = []
+            for i, intent in enumerate(all_intents):
+                agent = self.router.get_agent_for_intent(intent)
+                task_id = f"multi_task_{i}"
+                intent_ids.append(task_id)
+                sub_tasks.append({
+                    "id": task_id,
+                    "description": f"处理{intent.value}相关请求",
+                    "agent": agent,
+                    "dependencies": [],
+                })
+
+            working_memory.current_plan["sub_tasks"] = sub_tasks
+            working_memory.current_plan["execution_order"] = [intent_ids]  # 所有任务并行执行
+            working_memory.add_thought(
+                f"检测到多意图：{all_intents}，创建{len(sub_tasks)}个子任务并行执行",
+                agent="router",
+            )
 
         return {
             "current_intent": decision.intent.value,
