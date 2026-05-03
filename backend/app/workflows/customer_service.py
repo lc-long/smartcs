@@ -451,12 +451,33 @@ CONCLUSION: <简短结论，包含执行计划>"""
             }
         except Exception as e:
             logger.exception("execute_simple_error", agent=agent_name)
-            error_msg = f"抱歉，处理您的请求时出现了问题：{str(e)}"
+            # 使用熔断器记录失败
+            from backend.app.services.circuit_breaker import get_circuit_breaker, CircuitBreakerConfig
+            breaker = get_circuit_breaker(f"agent_{agent_name}")
+            await breaker._on_failure()
+
+            # 尝试降级策略
+            fallback_response = await self._get_fallback_response(agent_name, user_text, e)
+            if fallback_response:
+                return fallback_response
+
+            error_msg = f"抱歉，处理您的请求时出现了问题。请稍后重试或联系人工客服。"
             if working_memory:
                 working_memory.add_observation(f"执行失败: {str(e)}", agent=agent_name)
             return {
                 "agent_response": error_msg,
             }
+
+    async def _get_fallback_response(self, agent_name: str, user_text: str, error: Exception) -> dict | None:
+        """降级响应策略"""
+        # 如果是超时错误，尝试返回部分结果
+        if isinstance(error, TimeoutError):
+            if agent_name == "general":
+                return {
+                    "agent_response": "我正在处理您的请求，但由于系统繁忙，请稍等片刻。如果问题紧急，请联系人工客服。",
+                    "tools_called": [],
+                }
+        return None
 
     async def _execute_complex_node(self, state: CustomerServiceState) -> dict:
         """复杂任务执行节点"""
