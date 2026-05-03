@@ -97,6 +97,26 @@ async def decide_approval(approval_id: str, request: ApprovalDecisionRequest) ->
         "comment": request.comment,
     })
 
+    # 广播到所有在线的管理员
+    from backend.app.api.websocket.admin_ws import admin_manager
+    await admin_manager.broadcast_approval_update(
+        approval_id,
+        request.decision,
+        item.model_dump(),
+    )
+
+    # 发送 webhook 通知
+    from backend.app.services.webhook import get_webhook_service
+    webhook = get_webhook_service()
+    event_type = "approval.approved" if request.decision == "approve" else "approval.rejected"
+    await webhook.notify(event_type, {
+        "approval_id": approval_id,
+        "conversation_id": item.conversation_id,
+        "customer_id": item.customer_id,
+        "decision": request.decision,
+        "comment": request.comment,
+    })
+
     return {"success": True, "item": item.model_dump()}
 
 
@@ -135,3 +155,31 @@ async def release_conversation(conversation_id: str) -> dict:
         "message": "会话已交还AI处理",
         "conversation_id": conversation_id,
     }
+
+
+class WebhookRegisterRequest(BaseModel):
+    url: str
+
+
+class WebhookRegisterResponse(BaseModel):
+    success: bool
+    message: str
+
+
+@router.post("/webhooks")
+async def register_webhook(request: WebhookRegisterRequest) -> WebhookRegisterResponse:
+    from backend.app.services.webhook import get_webhook_service
+
+    webhook = get_webhook_service()
+    if webhook.register(request.url):
+        return WebhookRegisterResponse(success=True, message="Webhook registered")
+    return WebhookRegisterResponse(success=False, message="Invalid URL")
+
+
+@router.delete("/webhooks/{url}")
+async def unregister_webhook(url: str) -> dict:
+    from backend.app.services.webhook import get_webhook_service
+
+    webhook = get_webhook_service()
+    webhook.unregister(url)
+    return {"success": True}

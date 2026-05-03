@@ -14,6 +14,7 @@ from backend.app.api.v1.auth import router as auth_router
 from backend.app.api.v1.chat import router as chat_router
 from backend.app.api.v1.ecommerce import router as ecommerce_router
 from backend.app.api.v1.health import router as health_router
+from backend.app.api.v1.history import router as history_router
 from backend.app.api.v1.metrics import router as metrics_router
 from backend.app.api.v1.traces import router as traces_router
 from backend.app.api.websocket.chat_ws import handle_websocket
@@ -92,11 +93,26 @@ def create_app() -> FastAPI:
     app.include_router(analytics_router)
     app.include_router(metrics_router)
     app.include_router(agents_router)
+    app.include_router(history_router)
 
     @app.websocket("/ws/chat/{conversation_id}")
     async def websocket_chat(websocket: WebSocket, conversation_id: str) -> None:
         customer_id = websocket.query_params.get("customer_id", "anonymous")
         await handle_websocket(websocket, conversation_id, customer_id)
+
+    @app.websocket("/ws/admin")
+    async def websocket_admin(websocket: WebSocket) -> None:
+        from backend.app.api.websocket.admin_ws import admin_manager
+        admin_id = websocket.query_params.get("admin_id", "default")
+        await admin_manager.connect(websocket, admin_id)
+        try:
+            while True:
+                data = await websocket.receive_text()
+                # Keep connection alive, handle ping/pong
+                if data == "ping":
+                    await websocket.send_text("pong")
+        except WebSocketDisconnect:
+            admin_manager.disconnect(admin_id)
 
     return app
 
