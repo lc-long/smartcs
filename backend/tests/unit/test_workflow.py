@@ -184,9 +184,10 @@ class TestCustomerServiceWorkflow:
 
     @pytest.mark.asyncio
     async def test_hitl_triggered_for_high_value_refund(self, mock_llm_provider: LLMProvider):
-        """测试：高价值退款触发 HITL"""
+        """测试：高价值退款（>2000元）触发 HITL"""
         workflow = CustomerServiceWorkflow(llm_provider=mock_llm_provider)
 
+        # 高价值退款场景：用户明确要求退款，金额3298元
         state: CustomerServiceState = {
             "conversation_id": "test-conv-2",
             "customer_id": "C001",
@@ -195,7 +196,7 @@ class TestCustomerServiceWorkflow:
             "routing_confidence": 0.9,
             "routing_reasoning": "test",
             "active_agent": "refund",
-            "agent_response": "退款处理中...",
+            "agent_response": "退款处理中，订单金额¥3,298...",
             "tools_called": ["process_refund"],
             "needs_human": False,
             "human_approved": False,
@@ -204,14 +205,26 @@ class TestCustomerServiceWorkflow:
             "trace_id": "test-trace",
         }
 
-        result = await workflow._hitl_check_node(state)
-        assert result.get("needs_human") is True
+        # 使用较短的超时时间进行测试
+        from unittest.mock import patch
+        
+        # 模拟审批队列立即返回拒绝
+        async def mock_wait_for_approval(approval_id, timeout_seconds=300):
+            return "rejected"
+        
+        with patch('backend.app.workflows.customer_service.get_hitl_blocker') as mock_blocker:
+            mock_blocker.return_value.wait_for_approval = mock_wait_for_approval
+            result = await workflow._hitl_check_node(state)
+        
+        # 高价值退款被拒绝后needs_human应为False
+        assert result.get("needs_human") is False
 
     @pytest.mark.asyncio
     async def test_no_hitl_for_low_value_refund(self, mock_llm_provider: LLMProvider):
-        """测试：低价值退款不触发 HITL（无高风险工具时返回空）"""
+        """测试：低价值退款（<=2000元）不触发 HITL，自动批准"""
         workflow = CustomerServiceWorkflow(llm_provider=mock_llm_provider)
 
+        # 低价值退款场景：用户明确要求退款，金额399元
         state: CustomerServiceState = {
             "conversation_id": "test-conv-3",
             "customer_id": "C001",
@@ -220,8 +233,8 @@ class TestCustomerServiceWorkflow:
             "routing_confidence": 0.9,
             "routing_reasoning": "test",
             "active_agent": "refund",
-            "agent_response": "退款处理中...",
-            "tools_called": ["order_lookup"],  # 无高风险工具
+            "agent_response": "退款处理中，订单金额¥399...",
+            "tools_called": ["process_refund"],  # 有退款工具
             "needs_human": False,
             "human_approved": False,
             "human_comment": None,
@@ -230,4 +243,6 @@ class TestCustomerServiceWorkflow:
         }
 
         result = await workflow._hitl_check_node(state)
+        # 低价值退款不触发HITL，返回空字典
+        assert result == {}
         assert result == {}  # 无高风险工具时返回空dict
