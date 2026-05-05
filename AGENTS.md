@@ -10,13 +10,22 @@
 ## 常用命令
 
 ```bash
-# 后端启动（开发）
-uv run uvicorn backend.app.main:app --reload --port 8000
-# 或
-uv run python backend/scripts/run_server.py
+# 后端启动（必须用tmux，否则会莫名其妙打不开）
+tmux new-session -d -s backend "cd /home/lcl/smartcs && uv run uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000"
 
-# 前端启动
-cd frontend && npm run dev
+# 前端启动（必须用tmux，端口不要用5173）
+tmux new-session -d -s frontend "cd /home/lcl/smartcs/frontend && npx vite --host 0.0.0.0 --port 3001"
+
+# 查看tmux会话
+tmux ls
+
+# 查看服务日志
+tmux capture-pane -t backend -p
+tmux capture-pane -t frontend -p
+
+# 重启服务
+tmux kill-session -t backend 2>/dev/null
+tmux kill-session -t frontend 2>/dev/null
 
 # 测试
 uv run pytest backend/tests/ -v
@@ -32,6 +41,12 @@ uv run mypy backend/
 # 基础设施（PostgreSQL + Redis）
 docker-compose up -d
 ```
+
+## ⚠️ 重要规则
+
+1. **启动服务必须用tmux** - 不用tmux启动的服务会莫名其妙打不开
+2. **前端端口不要用5173** - 其他项目在用，用3001
+3. **启动顺序** - 先启动后端，再启动前端
 
 ## 工具链
 
