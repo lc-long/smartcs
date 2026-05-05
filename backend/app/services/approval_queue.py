@@ -141,8 +141,9 @@ class ApprovalQueue:
                 item.resolved_by = resolved_by
                 item.resolution_comment = comment
                 logger.info("approval_approved", approval_id=approval_id, by=resolved_by)
-        self._persist_background(item)
-        return item
+                self._persist_background(item)
+                return item
+            return None
 
     def reject(self, approval_id: str, resolved_by: str, comment: str = "") -> ApprovalItem | None:
         with self._lock:

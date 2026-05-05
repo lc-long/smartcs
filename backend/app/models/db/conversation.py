@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +42,11 @@ class Conversation(Base, TimestampMixin):
     active_agent: Mapped[str | None] = mapped_column(String(50), nullable=True)
     last_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deleted_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     def __repr__(self):
         return f"<Conversation {self.id} customer={self.customer_id} status={self.status}>"
@@ -70,6 +75,11 @@ class Message(Base):
         server_default=func.now(),
         nullable=False,
     )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deleted_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     def __repr__(self):
         return f"<Message {self.id} role={self.role} conv={self.conversation_id}>"

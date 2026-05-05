@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from backend.app.api.v1.auth import get_current_user
 from backend.app.api.websocket.chat_ws import manager
+from backend.app.models.db.user import User
 from backend.app.services.approval_queue import get_approval_queue
+from backend.app.services.chat_history import get_chat_history_service
 
 logger = structlog.get_logger()
 
@@ -20,6 +23,16 @@ class ApprovalDecisionRequest(BaseModel):
 class TakeoverRequest(BaseModel):
     agent_id: str
     reason: str = ""
+
+
+class ConversationListItem(BaseModel):
+    id: str
+    customer_id: str
+    status: str
+    last_message: str | None
+    created_at: str
+    updated_at: str
+    is_deleted: bool
 
 
 @router.get("/approvals")
@@ -81,7 +94,11 @@ async def decide_approval(approval_id: str, request: ApprovalDecisionRequest) ->
                     if request.comment and request.decision == "reject":
                         refund.rejection_reason = request.comment
                     await session.commit()
-                    logger.info("refund_status_updated", refund_no=refund.refund_no, status=refund.status)
+                    logger.info(
+                        "refund_status_updated",
+                        refund_no=refund.refund_no,
+                        status=refund.status,
+                    )
         except Exception as e:
             logger.warning("failed_to_update_refund_status", error=str(e))
 
@@ -183,3 +200,97 @@ async def unregister_webhook(url: str) -> dict:
     webhook = get_webhook_service()
     webhook.unregister(url)
     return {"success": True}
+
+
+# ==================== Conversation Management ====================
+
+
+@router.get("/conversations")
+async def admin_list_conversations(
+    include_deleted: bool = True,
+    status: str | None = None,
+    customer_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Admin: List all conversations with full visibility"""
+    if current_user.role not in ["admin", "superadmin", "agent"]:
+        raise HTTPException(status_code=403, detail="Admin or agent access required")
+
+    service = get_chat_history_service()
+
+    # Agents can only see escalated conversations
+    if current_user.role == "agent":
+        conversations = await service.get_escalated_conversations(
+            include_deleted=False,
+            limit=limit,
+            offset=offset,
+        )
+    else:
+        # Admin can see all conversations
+        conversations = await service.get_all_conversations_for_admin(
+            include_deleted=include_deleted,
+            status=status,
+            customer_id=customer_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    return {
+        "items": [
+            ConversationListItem(
+                id=c.id,
+                customer_id=c.customer_id,
+                status=c.status,
+                last_message=c.last_message,
+                created_at=c.created_at.isoformat() if c.created_at else "",
+                updated_at=c.updated_at.isoformat() if c.updated_at else "",
+                is_deleted=c.is_deleted or False,
+            ).model_dump()
+            for c in conversations
+        ],
+        "total": len(conversations),
+    }
+
+
+@router.post("/conversations/{conversation_id}/restore")
+async def admin_restore_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Admin: Restore a soft-deleted conversation"""
+    if current_user.role not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    service = get_chat_history_service()
+    success = await service.restore_conversation(conversation_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found or not deleted")
+
+    return {
+        "success": True,
+        "message": "Conversation restored successfully",
+        "conversation_id": conversation_id,
+    }
+
+
+@router.delete("/conversations/{conversation_id}/permanent")
+async def admin_permanent_delete_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Admin: Permanently delete a conversation (cannot be undone)"""
+    if current_user.role not in ["superadmin"]:
+        raise HTTPException(status_code=403, detail="Superadmin access required")
+
+    service = get_chat_history_service()
+    success = await service.permanent_delete_conversation(conversation_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return {
+        "success": True,
+        "message": "Conversation permanently deleted",
+        "conversation_id": conversation_id,
+    }

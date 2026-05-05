@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import re
-import structlog
 from dataclasses import dataclass
+
+import structlog
 
 logger = structlog.get_logger()
 
-CHINESE_PHONE_PATTERN = re.compile(r"1[3-9]\d{9}")
-CHINESE_ID_PATTERN = re.compile(r"\d{17}[\dXx]")
+CHINESE_PHONE_PATTERN = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+CHINESE_ID_PATTERN = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
 EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-BANK_CARD_PATTERN = re.compile(r"\d{12,19}")
+BANK_CARD_PATTERN = re.compile(r"(?<!\d)\d{12,19}(?!\d)")
 IP_PATTERN = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
 
 
@@ -33,17 +34,17 @@ class PIIRedactor:
 
         result = text
 
-        if self.config.mask_phone:
-            result = CHINESE_PHONE_PATTERN.sub("[手机号]", result)
-
         if self.config.mask_id:
             result = CHINESE_ID_PATTERN.sub("[身份证号]", result)
 
-        if self.config.mask_email:
-            result = EMAIL_PATTERN.sub("[邮箱]", result)
-
         if self.config.mask_bank_card:
             result = BANK_CARD_PATTERN.sub("[银行卡号]", result)
+
+        if self.config.mask_phone:
+            result = CHINESE_PHONE_PATTERN.sub("[手机号]", result)
+
+        if self.config.mask_email:
+            result = EMAIL_PATTERN.sub("[邮箱]", result)
 
         if self.config.mask_ip:
             result = IP_PATTERN.sub("[IP地址]", result)
