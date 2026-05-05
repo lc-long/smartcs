@@ -423,4 +423,78 @@ export const api = {
       avg_delivery_days: number;
       in_transit_count: number;
     }>("/analytics/logistics"),
+
+  // Conversations - History Management
+  getConversations: (params?: { include_deleted?: boolean; limit?: number; offset?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.include_deleted !== undefined) query.set("include_deleted", String(params.include_deleted));
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.offset) query.set("offset", String(params.offset));
+    return request<Array<{
+      id: string;
+      customer_id: string;
+      status: string;
+      last_message: string | null;
+      created_at: string;
+      updated_at: string;
+      is_deleted: boolean;
+    }>>(`/history/conversations?${query.toString()}`);
+  },
+
+  getConversationMessages: (conversationId: string, params?: { limit?: number; offset?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.offset) query.set("offset", String(params.offset));
+    return request<{
+      messages: Array<{
+        id: string;
+        role: string;
+        content: string;
+        agent_name: string | null;
+        tools_called: string[];
+        created_at: string;
+      }>;
+      total: number;
+    }>(`/history/conversations/${conversationId}?${query.toString()}`);
+  },
+
+  deleteConversation: (conversationId: string) =>
+    request(`/history/conversations/${conversationId}`, { method: "DELETE" }),
+
+  restoreConversation: (conversationId: string) =>
+    request(`/history/conversations/${conversationId}/restore`, { method: "POST" }),
+
+  // Admin - All Conversations
+  getAdminConversations: (params?: {
+    include_deleted?: boolean;
+    status?: string;
+    customer_id?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.include_deleted !== undefined) query.set("include_deleted", String(params.include_deleted));
+    if (params?.status) query.set("status", params.status);
+    if (params?.customer_id) query.set("customer_id", params.customer_id);
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.offset) query.set("offset", String(params.offset));
+    return request<{
+      items: Array<{
+        id: string;
+        customer_id: string;
+        status: string;
+        last_message: string | null;
+        created_at: string;
+        updated_at: string;
+        is_deleted: boolean;
+      }>;
+      total: number;
+    }>(`/admin/conversations?${query.toString()}`);
+  },
+
+  adminRestoreConversation: (conversationId: string) =>
+    request(`/admin/conversations/${conversationId}/restore`, { method: "POST" }),
+
+  adminPermanentDeleteConversation: (conversationId: string) =>
+    request(`/admin/conversations/${conversationId}/permanent`, { method: "DELETE" }),
 };

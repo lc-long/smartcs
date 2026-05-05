@@ -59,7 +59,17 @@
     "coordinating": "正在协调多个 Agent...",
     "thinking": "正在思考...",
     "needsApproval": "需要人工审批",
-    "toolsUsed": "调用工具"
+    "toolsUsed": "调用工具",
+    "history": "历史记录",
+    "historyList": "历史对话",
+    "noHistory": "暂无历史记录",
+    "newChat": "新对话",
+    "delete": "删除",
+    "newConversation": "新建对话",
+    "loading": "加载中...",
+    "confirmDelete": "确定要清空这个对话吗？清空后可联系管理员恢复。",
+    "deleteSuccess": "删除成功",
+    "deleteFailed": "删除失败"
   },
   "agent": {
     "smartRouter": "智能路由",

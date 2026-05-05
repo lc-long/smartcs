@@ -59,7 +59,17 @@
     "coordinating": "Coordinating agents...",
     "thinking": "Thinking...",
     "needsApproval": "Needs Approval",
-    "toolsUsed": "Tools"
+    "toolsUsed": "Tools",
+    "history": "History",
+    "historyList": "Conversation History",
+    "noHistory": "No history",
+    "newChat": "New Chat",
+    "delete": "Delete",
+    "newConversation": "New Conversation",
+    "loading": "Loading...",
+    "confirmDelete": "Are you sure you want to delete this conversation? It can be restored by an admin.",
+    "deleteSuccess": "Deleted successfully",
+    "deleteFailed": "Delete failed"
   },
   "agent": {
     "smartRouter": "Smart Router",

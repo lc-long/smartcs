@@ -5,7 +5,8 @@ import { useWebSocket } from "../../hooks/useWebSocket";
 import { useAuth } from "../../contexts/AuthContext";
 import type { WSEvent } from "../../types";
 import MessageBubble from "./MessageBubble";
-import { Send, Package, CreditCard, RotateCcw, Wrench, FileText, Phone, Sparkles, Loader2 } from "lucide-react";
+import { api } from "../../services/api";
+import { Send, Package, CreditCard, RotateCcw, Wrench, FileText, Phone, Sparkles, Loader2, Trash2, History, X, RotateCcwIcon } from "lucide-react";
 
 const AGENT_LABELS: Record<string, string> = { billing: "billing", technical: "techSupport", refund: "refund", general: "general", escalation: "human", supervisor: "smartRouter" };
 
@@ -14,9 +15,20 @@ export default function ChatWindow() {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
   const customerId = user?.customer_id || `guest-${user?.id?.slice(0, 8) || "unknown"}`;
-  const [conversationId] = useState(() => crypto.randomUUID());
+  const [conversationId, setConversationId] = useState<string>(() => crypto.randomUUID());
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<Array<{
+    id: string;
+    customer_id: string;
+    status: string;
+    last_message: string | null;
+    created_at: string;
+    updated_at: string;
+    is_deleted: boolean;
+  }>>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, addMessage, isProcessing, setProcessing, currentAgent, setCurrentAgent, addEvent } = useChatStore();
+  const { messages, addMessage, isProcessing, setProcessing, currentAgent, setCurrentAgent, addEvent, clear } = useChatStore();
   const { connected, sendMessage } = useWebSocket({ conversationId, customerId, onEvent: handleEvent });
 
   function handleEvent(event: WSEvent) {
@@ -53,6 +65,58 @@ export default function ChatWindow() {
 
   const agentLabel = currentAgent ? t(`agent.${AGENT_LABELS[currentAgent] || "general"}`) : "";
 
+  const loadConversations = async () => {
+    setHistoryLoading(true);
+    try {
+      const data = await api.getConversations({ include_deleted: false });
+      setConversations(data);
+    } catch (e) {
+      console.error("Failed to load conversations:", e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleDeleteConversation = async (convId: string) => {
+    if (!confirm("确定要清空这个对话吗？清空后可以联系管理员恢复。")) return;
+    try {
+      await api.deleteConversation(convId);
+      await loadConversations();
+      if (convId === conversationId) {
+        // Start a new conversation
+        setConversationId(crypto.randomUUID());
+        clear();
+      }
+    } catch (e) {
+      alert("删除失败");
+    }
+  };
+
+  const handleSelectConversation = async (convId: string) => {
+    setConversationId(convId);
+    setShowHistory(false);
+    clear();
+    try {
+      const data = await api.getConversationMessages(convId);
+      data.messages.forEach((msg) => addMessage({
+        id: msg.id,
+        role: msg.role as "user" | "assistant" | "system",
+        content: msg.content,
+        agent_name: msg.agent_name || undefined,
+        tools_called: msg.tools_called || [],
+        created_at: msg.created_at,
+      }));
+    } catch (e) {
+      console.error("Failed to load messages:", e);
+    }
+  };
+
+  const handleNewConversation = () => {
+    setConversationId(crypto.randomUUID());
+    clear();
+    setShowHistory(false);
+  };
+
   return (
     <div className="flex flex-col h-full" style={{ background: "var(--bg-app)" }}>
       <header className="h-12 px-5 flex items-center justify-between flex-shrink-0"
@@ -65,14 +129,66 @@ export default function ChatWindow() {
             <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{connected ? t("chat.connected") : t("chat.connecting")}</span>
           </div>
         </div>
-        {isProcessing && agentLabel && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium"
-            style={{ background: "var(--badge-bg)", color: "var(--accent)", border: "1px solid var(--badge-border)" }}>
-            <Loader2 className="w-3 h-3 animate-spin" />
-            {agentLabel} {t("chat.processing")}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {isProcessing && agentLabel && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium"
+              style={{ background: "var(--badge-bg)", color: "var(--accent)", border: "1px solid var(--badge-border)" }}>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              {agentLabel} {t("chat.processing")}
+            </div>
+          )}
+          <button
+            onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadConversations(); }}
+            className="p-1.5 rounded-md transition-colors cursor-pointer"
+            style={{ color: "var(--text-muted)", background: showHistory ? "var(--bg-elevated)" : "transparent" }}
+            title={t("chat.history")}
+          >
+            <History className="w-4 h-4" />
+          </button>
+        </div>
       </header>
+
+      {showHistory && (
+        <div className="flex-shrink-0 max-h-64 overflow-y-auto" style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)" }}>
+          <div className="px-4 py-2 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+            <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{t("chat.historyList")}</span>
+            <div className="flex gap-1">
+              <button onClick={handleNewConversation} className="p-1 rounded cursor-pointer transition-colors hover:bg-[var(--bg-elevated)]" style={{ color: "var(--text-muted)" }} title={t("chat.newConversation")}>
+                <RotateCcwIcon className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => setShowHistory(false)} className="p-1 rounded cursor-pointer transition-colors hover:bg-[var(--bg-elevated)]" style={{ color: "var(--text-muted)" }}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          {historyLoading ? (
+            <div className="p-4 text-center text-xs" style={{ color: "var(--text-muted)" }}>{t("chat.loading")}</div>
+          ) : conversations.length === 0 ? (
+            <div className="p-4 text-center text-xs" style={{ color: "var(--text-muted)" }}>{t("chat.noHistory")}</div>
+          ) : (
+            conversations.map((conv) => (
+              <div key={conv.id} className="px-4 py-2 flex items-center justify-between hover:bg-[var(--bg-elevated)] cursor-pointer transition-colors"
+                style={{ borderBottom: "1px solid var(--border-subtle)" }}
+                onClick={() => handleSelectConversation(conv.id)}>
+                <div className="flex-1 min-w-0 mr-2">
+                  <p className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                    {conv.last_message || t("chat.newChat")}
+                  </p>
+                  <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    {new Date(conv.created_at).toLocaleString("zh-CN")}
+                    {conv.is_deleted && <span className="ml-2 text-[var(--error)]">已删除</span>}
+                  </p>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
+                  className="p-1 rounded cursor-pointer transition-colors hover:bg-[var(--bg-app)]"
+                  style={{ color: "var(--text-muted)" }} title={t("chat.delete")}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
