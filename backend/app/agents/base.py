@@ -72,7 +72,7 @@ class BaseAgent(ABC):
         tools: list[BaseTool] | None = None,
         timeout: float | None = None,
     ) -> AIMessage:
-        """使用 function calling 调用工具"""
+        """使用 function calling 调用工具，支持DeepSeek兜底"""
         tools = tools or self.get_tools()
         timeout = timeout or self._settings.agent_timeout_seconds
         start_time = time.time()
@@ -85,43 +85,73 @@ class BaseAgent(ABC):
             timeout=timeout,
         )
 
-        try:
-            if tools:
-                llm_with_tools = self.llm.bind_tools(tools)
-                response = await asyncio.wait_for(
-                    llm_with_tools.ainvoke(messages),
-                    timeout=timeout,
+        # 尝试主LLM，失败后用DeepSeek兜底
+        for attempt in range(2):
+            try:
+                if attempt == 0:
+                    llm = self.llm
+                    provider_name = "minimax"
+                else:
+                    # 使用DeepSeek兜底
+                    llm = self.llm_provider._create_deepseek_llm("deepseek-chat", self._temperature)
+                    provider_name = "deepseek"
+                    logger.info("fallback_to_deepseek", agent=self.name)
+
+                if tools:
+                    llm_with_tools = llm.bind_tools(tools)
+                    response = await asyncio.wait_for(
+                        llm_with_tools.ainvoke(messages),
+                        timeout=timeout,
+                    )
+                else:
+                    response = await asyncio.wait_for(
+                        llm.ainvoke(messages),
+                        timeout=timeout,
+                    )
+
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                logger.info(
+                    "agent_invoke_end",
+                    agent=self.name,
+                    provider=provider_name,
+                    latency_ms=elapsed_ms,
+                    has_tool_calls=bool(response.tool_calls),
                 )
-            else:
-                response = await asyncio.wait_for(
-                    self.llm.ainvoke(messages),
-                    timeout=timeout,
+
+                self._record_token_usage(response, elapsed_ms)
+                return response
+
+            except TimeoutError:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                logger.error(
+                    "agent_invoke_timeout",
+                    agent=self.name,
+                    provider=provider_name if attempt == 0 else "deepseek",
+                    timeout_seconds=timeout,
+                    latency_ms=elapsed_ms,
+                )
+                if attempt == 1:  # 第二次也超时
+                    raise TimeoutError(f"Agent {self.name} invoke timeout after {timeout}s")
+
+            except Exception as e:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                error_str = str(e).lower()
+                logger.warning(
+                    "agent_invoke_error",
+                    agent=self.name,
+                    provider=provider_name if attempt == 0 else "deepseek",
+                    error=str(e),
+                    attempt=attempt + 1,
                 )
 
-            elapsed_ms = int((time.time() - start_time) * 1000)
-            logger.info(
-                "agent_invoke_end",
-                agent=self.name,
-                latency_ms=elapsed_ms,
-                has_tool_calls=bool(response.tool_calls),
-            )
+                # 检查是否需要切换到DeepSeek
+                if attempt == 0 and ("quota" in error_str or "limit" in error_str or "rate" in error_str or "401" in error_str):
+                    logger.warning("minimax_failed_switching_to_deepseek", reason=str(e))
+                    continue  # 尝试DeepSeek
+                elif attempt == 1:  # DeepSeek也失败
+                    raise
 
-            self._record_token_usage(response, elapsed_ms)
-            return response
-
-        except TimeoutError:
-            elapsed_ms = int((time.time() - start_time) * 1000)
-            logger.error(
-                "agent_invoke_timeout",
-                agent=self.name,
-                timeout_seconds=timeout,
-                latency_ms=elapsed_ms,
-            )
-            raise TimeoutError(f"Agent {self.name} invoke timeout after {timeout}s")
-
-        except Exception:
-            logger.exception("agent_invoke_error", agent=self.name)
-            raise
+        raise Exception(f"Agent {self.name} failed after all attempts")
 
     async def _invoke_and_execute_tools(
         self,
